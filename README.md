@@ -26,7 +26,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\STC-windows-
 
 The console title is `STC Backup Station`. When the host allows it, the window is set to a black background, UTF-8 output, and a minimum width of 80 columns.
 
-The main menu is **Copy Data**, **Folder Size**, and **Exit**. After a copy or folder-size run finishes, you can return to the main menu or exit. Canceling before a run starts (empty path, **Back**) returns to the main menu without that prompt.
+The main menu is **Copy Data**, **Folder Size**, **Folder Size Comparison**, and **Exit**. After a copy finishes, you can compare the source and backup, return to the main menu, or exit. After a folder-size or comparison run finishes, you can return to the main menu or exit. Canceling before a run starts (empty path, **Back**) returns to the main menu without that prompt.
 
 Menus, prompts, progress, and summaries share the same screen renderer. Resizing rebuilds the current screen, clears stale rows, and preserves partially entered input and the summary above the **Next** menu. Ordinary updates write only changed rows. Long confirmation paths, summaries, and messages wrap; progress paths keep their ending with a leading `...`. Fitting affects displayed text only. If the console buffer is too short for the entire screen, the last rows remain visible; enlarging the buffer restores the retained content.
 
@@ -59,6 +59,8 @@ You then get a **Confirm Copy** summary (source, destination, preset):
 When changing one path, Enter keeps the current value. Changing both paths and then canceling leaves the previous pair unchanged.
 
 After you start, the tool does a dry run to estimate total size and file count, then copies with live overall progress (data and files) and per-file progress. When it finishes, it shows a summary (paths, size, file count, timing, Robocopy exit code, status, and log path) and writes the same timing summary next to the Robocopy log. The summary's size and file count come from the initial estimate.
+
+The Next menu then offers **Compare source and backup** as option 3. Options 1 and 2 are still **Back to main menu** and **Exit**. Compare scans the source and destination from the copy that just finished. It is also offered when estimation fails or the copy is interrupted, because those paths are already known. Canceling before the copy starts does not show this menu.
 
 Robocopy runs as a separate process and writes directly to its log. Like the Folder Size tool, the copy tool processes available activity continuously and limits only screen refreshes to once every 100 milliseconds. It waits for new data only after catching up with the log, so the read-buffer size does not limit processing to one chunk per refresh. Console rendering cannot block Robocopy through an output pipe.
 
@@ -127,20 +129,49 @@ Robocopy returns a bit mask. The base flags are **1** (files copied), **2** (ext
 
 ### Folder Size
 
-Recursively counts files, subfolders, and total bytes at a path you enter (must already exist). Hidden and system items are included.
+Recursively measures one folder. The path must already exist. Hidden and system items are included. Directory junctions and file symbolic links are not followed, matching the copy tool's `/XJ` switch, so profile junctions such as `Application Data` are not counted twice. Cloud placeholder files are included.
 
-While it scans, it shows live size, file count, folder count, and the path currently being read. The final summary repeats the path you typed, the total size (human-readable and bytes), and the file and folder counts.
+Two sizes are recorded for each file:
 
-Enumeration runs in an in-process PowerShell worker, publishing a complete progress snapshot at most once every 100 milliseconds and once at completion. The main thread owns all console output and can handle resizing while a filesystem read is waiting. Counting still sums each readable file's `Length`; it does not measure allocated disk space or confirm that a concurrent copy has finished. Cancellation stops and disposes the worker.
+- **Logical size** is `FileInfo.Length`, the directory metadata length. This is the length Robocopy copies with `/COPY:DAT`.
+- **Stored size** comes from `GetCompressedFileSizeW`. For a normal file it matches the logical size. It is smaller for NTFS-compressed files, sparse files, and dehydrated placeholders. Cluster slack is not included, so a 4K volume and a 64K volume can still match.
+
+While it scans, it shows live logical size, stored size, file count, folder count, and the path currently being read. The final summary repeats the path you typed, both totals (human-readable and bytes), the gap, the file and folder counts, the unreadable and reparse counts, and the log path. This main-menu tool does not compare two folders.
+
+When logical size and stored size differ, a second box lists the shallowest folder whose entire subtree differs. Each difference is a short record: path, file count, logical size, stored size, and gap. A folder that contains both matching and differing files is not listed; the differing file, or a uniform child folder, is listed instead. The whole tree is one record, labeled `entire folder`, only when every file differs. No differences produces `No differences.` More than 40 lines stay in the log; the screen shows the first 40 and how many lines remain.
+
+The full report, including every rollup line, unreadable path, and skipped reparse point, is written to `C:\Temp\backup_logs\folder_size\folder-size-<time>-<id>.txt`.
+
+Enumeration runs in an in-process PowerShell worker, publishing a complete progress snapshot at most once every 100 milliseconds and once at completion. The main thread owns all console output and can handle resizing while a filesystem read is waiting. Equal logical and stored size does not prove the bytes are identical, and the scan does not confirm that a concurrent copy has finished. Cancellation stops and disposes the worker.
 
 Long paths are supported via the `\\?\` prefix:
 
 - Local: `C:\folder` → `\\?\C:\folder`
 - UNC: `\\server\share\folder` → `\\?\UNC\server\share\folder`
 
-Access-denied items are skipped silently so the progress display stays in place. Counts only include readable items, so a locked or permission-denied tree can under-report.
+Access-denied directories and files are counted as unreadable and left out of the totals, so a locked or permission-denied tree can under-report. The log names those paths. An unreadable directory is one line, not a list of every child that could not be read.
 
 Enter with an empty path cancels and returns to the main menu.
+
+#### Compare source and backup
+
+Compare is on the main menu as **Folder Size Comparison**, and it is also option 3 on the Next menu after Copy Data. It is not on the Folder Size Next menu. From the main menu, both folders must already exist. An empty path cancels and returns to the main menu. After a copy, it uses that copy's source and destination and does not ask again. Two workers scan the trees at the same time. One finished worker stays on screen until the other finishes.
+
+The backup matches when every relative path has the same logical size. Paths are compared without regard to case. A stored-size gap is shown and does not by itself fail the backup. The result box states one of:
+
+- **Logical sizes match.** Nothing unreadable, and no path or logical-size difference.
+- **Sizes match for items that could be read. Some items were skipped.** No logical-size difference, but at least one item could not be read.
+- **Source and backup differ.** A path exists on only one side, or the logical sizes differ.
+
+While those lists are compared, the comparing box shows how many files have been checked. The totals table comes next, with Source, Backup, and Gap columns for logical size, stored size, file count, folder count, unreadable count, and reparse count. Logical and stored rows include the exact byte count on the next line. On a narrow window the columns stack under each metric instead.
+
+The cross-tree, logical-versus-stored, and unreadable sections are each one box with Source and Backup columns. A folder only on one side appears in that column. A logical-size mismatch is one row across both columns. The shallowest uniform folder is listed, labeled `entire folder` when the whole tree differs. Logical versus stored shows path, file count, logical size, stored size, and gap in the column for that tree. Unreadable paths use the same columns, and a side with no paths says `none`. A path under another unreadable path is hidden. Each of those boxes keeps the first 40 lines on screen.
+
+The result box is last, just before the finished rule. It states the verdict above, says this is a size check and that equal logical size does not prove identical bytes, and gives the log path.
+
+If the backup could not read `Secret\`, files under `Secret\` are not also listed as missing from the backup. The unreadable box names `Secret\`. The same rule applies in the other direction.
+
+After a copy, the full report is written next to that copy's Robocopy log as `folder-compare-<time>-<id>.txt`. From the main menu, the same file is written under `C:\Temp\backup_logs\folder_size`. Choosing compare again runs it again. Ctrl+C stops and disposes both workers.
 
 ## Paths
 

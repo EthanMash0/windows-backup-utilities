@@ -17,6 +17,7 @@ $script:RobocopySuccessExitCodeMax = 7
 $script:RobocopyProgressBarWidth = 40
 $script:RobocopyProgressIntervalMs = 100
 $script:RobocopyLogReadBufferBytes = 65536
+$script:RobocopyLibRoot = $PSScriptRoot
 
 # =============================================================================
 #  Helpers
@@ -740,6 +741,20 @@ function New-ItemProgressBox {
 	)
 }
 
+function New-RobocopyCompletedResult {
+	param(
+		$CopyPaths,
+		$LogPaths
+	)
+
+	return [pscustomobject]@{
+		Status = 'Completed'
+		Source = $CopyPaths.Source
+		Dest = $CopyPaths.Dest
+		LogFolder = [System.IO.Path]::GetDirectoryName($LogPaths.Log)
+	}
+}
+
 # =============================================================================
 #  Orchestrator
 # =============================================================================
@@ -807,7 +822,7 @@ function Invoke-RobocopyTool {
 	catch [System.Management.Automation.PipelineStoppedException] { throw }
 	catch {
 		Write-ErrorMessage "Estimation failed: $($_.Exception.Message)"
-		return 'Completed'
+		return New-RobocopyCompletedResult -CopyPaths $copyPaths -LogPaths $logPaths
 	}
 
 	Write-CopyProgress -Display $display -CopyPaths $copyPaths -ThreadCount $threadCount -Estimate $estimate -Force
@@ -880,7 +895,7 @@ function Invoke-RobocopyTool {
 		Write-UiLine
 		Write-ErrorMessage "Copy interrupted: $($_.Exception.Message)"
 		Write-UiLine -Text "Log: $($logPaths.Log)" -Style Secondary
-		return 'Completed'
+		return New-RobocopyCompletedResult -CopyPaths $copyPaths -LogPaths $logPaths
 	}
 	finally {
 		try {
@@ -933,5 +948,34 @@ function Invoke-RobocopyTool {
 		-Log $logPaths.Log `
 		-Estimate $estimate
 
-	return 'Completed'
+	return New-RobocopyCompletedResult -CopyPaths $copyPaths -LogPaths $logPaths
+}
+
+function Read-AfterCopyChoice {
+	param(
+		[string]$Source,
+		[string]$Dest,
+		[string]$LogFolder
+	)
+
+	. (Join-Path $script:RobocopyLibRoot 'FolderSize.ps1')
+
+	while ($true) {
+		Add-UiBlock @{ Kind = 'Custom'; Static = $true; Builder = ${function:New-UiFinishedLines}; Data = $null }
+		$choice = Read-MenuChoice -Title 'Next' -NoClear -TitleStyle Header -Options @(
+			@{ Key = '1'; Label = 'Back to main menu' }
+			@{ Key = '2'; Label = 'Exit' }
+			@{ Key = '3'; Label = 'Compare source and backup' }
+		)
+
+		if ($choice -eq '2') {
+			Write-UiLine -Text "Exiting."
+			exit 0
+		}
+		if ($choice -eq '3') {
+			Invoke-FolderSizeComparison -Source $Source -Dest $Dest -LogFolder $LogFolder
+			continue
+		}
+		return
+	}
 }

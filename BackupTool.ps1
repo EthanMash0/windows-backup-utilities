@@ -36,15 +36,16 @@ while ($true) {
 	$choice = Read-MenuChoice -Title 'STC Windows Backup Station' -Options @(
 		@{ Key = '1'; Label = 'Copy Data'; Description = 'Robocopy with Slow / Standard / Fast' }
 		@{ Key = '2'; Label = 'Folder Size' }
-		@{ Key = '3'; Label = 'Exit' }
+		@{ Key = '3'; Label = 'Folder Size Comparison' }
+		@{ Key = '4'; Label = 'Exit' }
 	)
 
 	switch ($choice) {
 		'1' {
 			. "$PSScriptRoot\lib\Robocopy.ps1"
 			$result = Invoke-RobocopyTool
-			if ($result -eq 'Completed') {
-				Read-AfterToolChoice
+			if ($result.Status -eq 'Completed') {
+				Read-AfterCopyChoice -Source $result.Source -Dest $result.Dest -LogFolder $result.LogFolder
 			}
 		}
 		'2' {
@@ -55,6 +56,13 @@ while ($true) {
 			}
 		}
 		'3' {
+			. "$PSScriptRoot\lib\FolderSize.ps1"
+			$result = Invoke-FolderSizeCompareTool
+			if ($result -eq 'Completed') {
+				Read-AfterToolChoice
+			}
+		}
+		'4' {
 			Write-UiLine -Text "Exiting."
 			exit 0
 		}
