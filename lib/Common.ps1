@@ -6,7 +6,7 @@ function Show-PathHelp {
 	Write-UiLine
 	Show-InfoBox -Title $Title -TrailingBlank -Rows @(
 		(Format-UiText -Text "  Enter a local path like:" -Style Secondary)
-		"    D:\Users\STC"
+		"    D:\Users\ethanmash"
 		""
 		(Format-UiText -Text "  Or a network path like:" -Style Secondary)
 		"    \\server\share\folder"

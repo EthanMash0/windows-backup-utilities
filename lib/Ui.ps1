@@ -37,7 +37,7 @@ public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 }
 
 function Initialize-Ui {
-	if ($global:StcUi -and $global:StcUi.Initialized -and $global:StcUi.ContainsKey('InteractiveConsole')) {
+	if ($global:UiState -and $global:UiState.Initialized -and $global:UiState.ContainsKey('InteractiveConsole')) {
 		return
 	}
 
@@ -46,7 +46,7 @@ function Initialize-Ui {
 		$interactiveConsole = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected -and [Console]::WindowWidth -gt 0
 		if ($interactiveConsole) { $null = [Console]::KeyAvailable }
 	} catch { $interactiveConsole = $false }
-	$global:StcUi = @{
+	$global:UiState = @{
 		Initialized = $true
 		InteractiveConsole = $interactiveConsole
 		UseVt = Enable-VirtualTerminal
@@ -85,12 +85,12 @@ function Format-UiText {
 
 	Initialize-Ui
 
-	if (-not $global:StcUi.UseVt) {
+	if (-not $global:UiState.UseVt) {
 		return $Text
 	}
 
-	$rgb = $global:StcUi.Theme[$Style]
-	$esc = $global:StcUi.Esc
+	$rgb = $global:UiState.Theme[$Style]
+	$esc = $global:UiState.Esc
 	# Keep black behind the text. SGR 0 resets to the console default, which
 	# is dark blue in powershell.exe — not the Black we set on RawUI.
 	return "$esc[38;2;$($rgb[0]);$($rgb[1]);$($rgb[2])m$esc[48;2;0;0;0m$Text$esc[38;2;255;255;255m$esc[48;2;0;0;0m"
@@ -104,11 +104,11 @@ function Format-UiSurface {
 
 	Initialize-Ui
 
-	if (-not $global:StcUi.UseVt -or [string]::IsNullOrEmpty($Text)) {
+	if (-not $global:UiState.UseVt -or [string]::IsNullOrEmpty($Text)) {
 		return $Text
 	}
 
-	$esc = $global:StcUi.Esc
+	$esc = $global:UiState.Esc
 	return "$esc[38;2;255;255;255m$esc[48;2;0;0;0m$Text$esc[38;2;255;255;255m$esc[48;2;0;0;0m"
 }
 
@@ -256,7 +256,7 @@ function Set-UiCursorVisible {
 	param([bool]$Visible)
 
 	try {
-		if ($global:StcUi.InteractiveConsole) { [Console]::CursorVisible = $Visible }
+		if ($global:UiState.InteractiveConsole) { [Console]::CursorVisible = $Visible }
 	} catch {
 		# Cursor visibility is cosmetic and must not interrupt an operation.
 	}
@@ -328,7 +328,7 @@ function Update-UiScreen {
 	if ($null -eq $script:UiScreen) { return }
 	try {
 		$screen = $script:UiScreen
-		$plainOutput = -not $global:StcUi.InteractiveConsole
+		$plainOutput = -not $global:UiState.InteractiveConsole
 		$size = if ($plainOutput) { @{ Width = 80; Key = 'plain' } } else { Get-UiConsoleSize }
 		if (-not ($Force -or $screen.Dirty -or $screen.Frame.NeedsRedraw -or $screen.Frame.SizeKey -ne $size.Key)) { return }
 		$layout = New-BoxLayout -WindowWidth $size.Width
@@ -437,7 +437,7 @@ function Write-UiText {
 
 	Initialize-Ui
 
-	if ($global:StcUi.UseVt) {
+	if ($global:UiState.UseVt) {
 		$line = Format-UiText -Text $Text -Style $Style
 		if ($NoNewline) {
 			Write-Host $line -NoNewline
@@ -447,7 +447,7 @@ function Write-UiText {
 		return
 	}
 
-	$color = $global:StcUi.Fallback[$Style]
+	$color = $global:UiState.Fallback[$Style]
 	if ($color) {
 		if ($NoNewline) {
 			Write-Host $Text -NoNewline -ForegroundColor $color
@@ -659,7 +659,7 @@ function Read-UiInput {
 	$screen = $script:UiScreen
 	try {
 		# Hosts without console key events retain their normal line input.
-		if (-not $global:StcUi.InteractiveConsole) {
+		if (-not $global:UiState.InteractiveConsole) {
 			Update-UiScreen
 			Write-UiText -Text "${Prompt}: " -Style Prompt -NoNewline
 			$value = if ([Console]::IsInputRedirected) { [Console]::ReadLine() } else { $Host.UI.ReadLine() }

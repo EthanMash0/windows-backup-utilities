@@ -1,4 +1,4 @@
-$Host.UI.RawUI.WindowTitle = 'STC Backup Station'
+$Host.UI.RawUI.WindowTitle = 'Backup Utilities'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $minWidth = 80
@@ -33,7 +33,7 @@ catch {
 . "$PSScriptRoot\lib\Common.ps1"
 
 while ($true) {
-	$choice = Read-MenuChoice -Title 'STC Windows Backup Station' -Options @(
+	$choice = Read-MenuChoice -Title 'Windows Backup Utilities' -Options @(
 		@{ Key = '1'; Label = 'Copy Data'; Description = 'Robocopy with Slow / Standard / Fast' }
 		@{ Key = '2'; Label = 'Folder Size' }
 		@{ Key = '3'; Label = 'Folder Size Comparison' }

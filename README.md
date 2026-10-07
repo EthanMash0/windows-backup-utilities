@@ -1,6 +1,6 @@
-# STC Windows Backup Station Utilities
+# Windows Backup Utilities
 
-Menu-driven PowerShell tools for Yale Student Technology Collaborative (STC) Windows backup stations. Use them to copy a client's data with Robocopy and to check folder size before or after a backup.
+Menu-driven PowerShell tools for copying folders with Robocopy and for measuring folder size. Use them to copy a folder and to check its size before or after the copy.
 
 There are no command-line arguments. Source, destination, and options are entered in the console.
 
@@ -21,10 +21,10 @@ Double-click `run.bat`. That opens an elevated PowerShell window in this folder 
 To run the menu yourself (this command does not elevate; right-click PowerShell and run as administrator if you need that):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\STC-windows-backup-station-utilities\BackupTool.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\windows-backup-utilities\BackupTool.ps1"
 ```
 
-The console title is `STC Backup Station`. When the host allows it, the window is set to a black background, UTF-8 output, and a minimum width of 80 columns.
+The console title is `Backup Utilities`. When the host allows it, the window is set to a black background, UTF-8 output, and a minimum width of 80 columns.
 
 The main menu is **Copy Data**, **Folder Size**, **Folder Size Comparison**, and **Exit**. After a copy finishes, you can compare the source and backup, return to the main menu, or exit. After a folder-size or comparison run finishes, you can return to the main menu or exit. Canceling before a run starts (empty path, **Back**) returns to the main menu without that prompt.
 
@@ -74,7 +74,7 @@ Copies use:
 
 - `/E` — subfolders, including empty ones
 - `/COPY:DAT` and `/DCOPY:DAT` — data, attributes, and timestamps for files and directories (not NTFS ACLs, owner, or auditing)
-- `/XJ` — junctions excluded (important on user profiles)
+- `/XJ` — directory junctions are not followed
 - `/R:3 /W:5` — 3 retries, 5 seconds between retries
 - `/MT:<threads>` — the Slow / Standard / Fast preset
 - `/UNILOG:` — Unicode log file, read by the progress display; no `/TEE`
@@ -129,7 +129,7 @@ Robocopy returns a bit mask. The base flags are **1** (files copied), **2** (ext
 
 ### Folder Size
 
-Recursively measures one folder. The path must already exist. Hidden and system items are included. Directory junctions and file symbolic links are not followed, matching the copy tool's `/XJ` switch, so profile junctions such as `Application Data` are not counted twice. Cloud placeholder files are included.
+Recursively measures one folder. The path must already exist. Hidden and system items are included. Directory junctions and file symbolic links are not followed, matching the copy tool's `/XJ` switch, so a junction is not counted as well as its target. Cloud placeholder files are included.
 
 Two sizes are recorded for each file:
 
@@ -178,8 +178,8 @@ After a copy, the full report is written next to that copy's Robocopy log as `fo
 You can enter a local path, a mapped drive letter, or a UNC share. Surrounding quotes are stripped. A trailing backslash is removed.
 
 ```
-D:\Users\STC
-Z:\Backups\jdoe
+D:\Users\ethanmash
+Z:\Backups\user
 \\server\share\folder
 ```
 
@@ -189,7 +189,7 @@ Source (Copy Data) and Path (Folder Size) must already exist. Destination (Copy 
 
 ### Mapped drives missing in the elevated window (`Z:`, `X:`, and similar)
 
-`run.bat` always starts an **elevated** PowerShell session. Windows gives your normal desktop session and that elevated session separate logon tokens. Drive letters mapped in the normal user session (for example `Z:` to a backup share) often do **not** appear in the admin window.
+`run.bat` always starts an **elevated** PowerShell session. Windows gives your normal desktop session and that elevated session separate logon tokens. Drive letters mapped in the normal user session (for example `Z:` to a network share) often do **not** appear in the admin window.
 
 Symptoms:
 
@@ -232,9 +232,9 @@ If `Z:` (or `X:`, or any other mapped letter) is mapped in the same user's norma
 net use Z:
 ```
 
-and paths like `Z:\Backups\jdoe` in this tool.
+and paths like `Z:\Backups\user` in this tool.
 
-This is a machine-wide setting. Apply it once on each backup station.
+This is a machine-wide setting. Apply it once on each computer.
 
 #### Workaround without a reboot
 
