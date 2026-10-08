@@ -13,11 +13,11 @@ function New-FolderSizeSnapshot {
 function Start-FolderSizeScan {
 	param(
 		[string]$Path,
-		[hashtable]$Shared,
 		[switch]$CollectFiles
 	)
 
 	Initialize-FolderSizeNative
+	$shared = [hashtable]::Synchronized(@{ Snapshot = (New-FolderSizeSnapshot -CurrentPath $Path); Result = $null })
 	$modelSource = [System.IO.File]::ReadAllText((Join-Path $script:FolderSizeLibRoot 'FolderSizeModel.ps1'))
 	$worker = [PowerShell]::Create()
 	try {
@@ -185,8 +185,8 @@ function Start-FolderSizeScan {
 				FilesByPath = $script:FilesByPath
 				Directories = $script:Directories
 			}
-		}).AddArgument($Path).AddArgument($Shared).AddArgument($script:FolderSizeProgressIntervalMs).AddArgument([bool]$CollectFiles).AddArgument($modelSource)
-		return @{ Worker = $worker; Pending = $worker.BeginInvoke() }
+		}).AddArgument($Path).AddArgument($shared).AddArgument($script:FolderSizeProgressIntervalMs).AddArgument([bool]$CollectFiles).AddArgument($modelSource)
+		return @{ Worker = $worker; Pending = $worker.BeginInvoke(); Shared = $shared }
 	}
 	catch {
 		$worker.Dispose()
@@ -204,20 +204,55 @@ function Stop-FolderSizeScan {
 	finally { $Scan.Worker.Dispose() }
 }
 
-function Update-FolderSizeScanDisplay {
+function Stop-FolderSizeScans {
+	param([System.Collections.IDictionary]$Scans)
+
+	foreach ($scan in @($Scans.Values)) {
+		try { Stop-FolderSizeScan $scan }
+		catch [System.Management.Automation.PipelineStoppedException] { throw }
+		catch { }
+	}
+}
+
+function Wait-FolderSizeScans {
 	param(
-		$Scan,
-		[hashtable]$Shared,
-		$State,
-		$Block
+		[System.Collections.IDictionary]$Scans,
+		[hashtable]$Progress
 	)
 
-	if ($null -eq $Scan) { return $State }
-	$snapshot = $Shared.Snapshot
-	if (-not [object]::ReferenceEquals($State, $snapshot)) {
-		$State = $snapshot
-		$Block.Data = $State
-		$script:UiScreen.Dirty = $true
+	while ($true) {
+		$running = $false
+		foreach ($key in @($Scans.Keys)) {
+			$scan = $Scans[$key]
+			if (-not $scan.Pending.IsCompleted) { $running = $true }
+			$snapshot = $scan.Shared.Snapshot
+			if (-not [object]::ReferenceEquals($Progress[$key], $snapshot)) {
+				$Progress[$key] = $snapshot
+				$script:UiScreen.Dirty = $true
+			}
+		}
+		if (-not $running) { return }
+		# Check for resizing even if a directory or network read is waiting.
+		Update-UiScreen
+		Start-Sleep -Milliseconds $script:FolderSizeProgressIntervalMs
 	}
-	return $State
+}
+
+function Complete-FolderSizeScans {
+	param([System.Collections.IDictionary]$Scans)
+
+	$failure = $null
+	$results = @{}
+	foreach ($key in @($Scans.Keys)) {
+		$scan = $Scans[$key]
+		try { [void]$scan.Worker.EndInvoke($scan.Pending) }
+		catch [System.Management.Automation.PipelineStoppedException] { throw }
+		catch { if ($null -eq $failure) { $failure = $_ } }
+		$results[$key] = $scan.Shared.Result
+	}
+	if ($null -ne $failure) { throw $failure }
+	foreach ($key in @($results.Keys)) {
+		if ($null -eq $results[$key]) { throw 'A folder scan finished without a result.' }
+	}
+	return $results
 }

@@ -120,3 +120,21 @@ function Format-ByteSize {
 
 	return ('{0:N2} KB' -f ($Bytes / 1KB))
 }
+
+function Format-ByteSizeDetail {
+	param(
+		[decimal]$Bytes,
+		[switch]$Exact
+	)
+
+	if ($Bytes -eq 0) { return '0 bytes' }
+	$sign = ''
+	$absolute = $Bytes
+	if ($Bytes -lt 0) {
+		$sign = '-'
+		$absolute = -$Bytes
+	}
+	$text = $sign + (Format-ByteSize ([double]$absolute))
+	if ($Exact) { $text += (' ({0:N0} bytes)' -f $Bytes) }
+	return $text
+}

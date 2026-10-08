@@ -230,6 +230,37 @@ function Format-UiPath {
 	return $ellipsis + $display.Substring($start)
 }
 
+function Format-UiProgressBar {
+	param(
+		[double]$Percent,
+		[int]$BarWidth
+	)
+
+	$fillLen = [int][Math]::Round(($Percent / 100) * $BarWidth)
+	if ($fillLen -lt 0) {
+		$fillLen = 0
+	}
+	elseif ($fillLen -gt $BarWidth) {
+		$fillLen = $BarWidth
+	}
+
+	$emptyLen = $BarWidth - $fillLen
+
+	# Block fill + box horizontal empty, via code points so Windows PowerShell 5.1
+	# can parse this file without a UTF-8 BOM.
+	$fillStr = [String]::new([char]0x2588, $fillLen)
+	$emptyStr = [String]::new([char]0x2500, $emptyLen)
+
+	if ($fillLen -gt 0) {
+		$fillStr = Format-UiText -Text $fillStr -Style Success
+	}
+	if ($emptyLen -gt 0) {
+		$emptyStr = Format-UiText -Text $emptyStr -Style Secondary
+	}
+
+	return '[' + $fillStr + $emptyStr + ']'
+}
+
 function Get-UiConsoleSize {
 	$width = [Console]::WindowWidth
 	$height = [Console]::WindowHeight
