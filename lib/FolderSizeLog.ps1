@@ -266,6 +266,7 @@ function Write-FolderSizeReportFile {
 			[System.IO.File]::WriteAllLines($path, $Lines, $utf8)
 			return @{ Path = $path; Failures = $failures.ToArray() }
 		}
+		catch [System.Management.Automation.PipelineStoppedException] { throw }
 		catch {
 			[void]$failures.Add(('{0}: {1}' -f $directory, (Get-FolderSizeErrorMessage $_)))
 		}
