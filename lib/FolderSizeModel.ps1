@@ -116,55 +116,13 @@ function Add-FolderSizeMetric {
 	}
 }
 
-function Get-FolderSizeObjectList {
-	param($Value)
-
-	# @() enumerates a hashtable into dictionary entries, and a one-item array
-	# stored on the worker result comes back as that one item. Neither should
-	# be treated as a list of difference records.
-	$list = New-Object System.Collections.Generic.List[object]
-	if ($null -eq $Value) { return ,$list.ToArray() }
-	if ($Value -is [string] -or $Value -is [System.Collections.IDictionary] -or $Value -is [pscustomobject]) {
-		[void]$list.Add($Value)
-		return ,$list.ToArray()
-	}
-	if ($Value -is [System.Collections.IEnumerable]) {
-		foreach ($item in $Value) {
-			if ($null -eq $item -or $item -is [System.Collections.DictionaryEntry]) { continue }
-			[void]$list.Add($item)
-		}
-		return ,$list.ToArray()
-	}
-	[void]$list.Add($Value)
-	return ,$list.ToArray()
-}
-
-function Get-FolderSizeStringList {
-	param($Value)
-
-	# A [string[]] parameter turns $null into one empty string, which then
-	# displays as a path and also covers every child in the unreadable test.
-	$list = New-Object System.Collections.Generic.List[string]
-	if ($null -eq $Value) { return ,$list.ToArray() }
-	if ($Value -is [string]) {
-		[void]$list.Add($Value)
-		return ,$list.ToArray()
-	}
-	if ($Value -is [System.Collections.IEnumerable]) {
-		foreach ($item in $Value) {
-			if ($null -ne $item) { [void]$list.Add([string]$item) }
-		}
-	}
-	return ,$list.ToArray()
-}
-
 function Test-FolderSizePathCovered {
 	param(
 		[string]$RelativePath,
 		$Ancestors
 	)
 
-	foreach ($ancestor in (Get-FolderSizeStringList $Ancestors)) {
+	foreach ($ancestor in $Ancestors) {
 		if ([string]::IsNullOrEmpty($ancestor)) { return $true }
 		if ($RelativePath -eq $ancestor) { return $true }
 		if (-not [string]::IsNullOrEmpty($RelativePath) -and $RelativePath.StartsWith($ancestor + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -385,11 +343,12 @@ function Get-CrossTreeRollup {
 	foreach ($entry in (Select-FolderSizeUniformRollup -Stats $stats -Leaves $leaves -GetUniformState ${function:Get-CrossTreeState})) {
 		[void]$entries.Add($entry)
 	}
-	$reported = @(foreach ($entry in $entries) { [string]$entry.RelativePath })
-	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $SourceDirectories -OtherDirectories $DestDirectories -OtherUnreadable $DestUnreadable -Stats $stats -Reported $reported -State 'OnlyInSource')) {
+	$reportedSource = @(foreach ($entry in $entries) { if ($entry.State -eq 'OnlyInSource') { [string]$entry.RelativePath } })
+	$reportedBackup = @(foreach ($entry in $entries) { if ($entry.State -eq 'OnlyInBackup') { [string]$entry.RelativePath } })
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $SourceDirectories -OtherDirectories $DestDirectories -OtherUnreadable $DestUnreadable -Stats $stats -Reported $reportedSource -State 'OnlyInSource')) {
 		[void]$entries.Add($entry)
 	}
-	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $DestDirectories -OtherDirectories $SourceDirectories -OtherUnreadable $SourceUnreadable -Stats $stats -Reported $reported -State 'OnlyInBackup')) {
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $DestDirectories -OtherDirectories $SourceDirectories -OtherUnreadable $SourceUnreadable -Stats $stats -Reported $reportedBackup -State 'OnlyInBackup')) {
 		[void]$entries.Add($entry)
 	}
 	return ,@($entries | Sort-Object RelativePath, State)
@@ -445,64 +404,4 @@ function Get-FolderCompareTotalRows {
 		})
 	}
 	return ,$rows.ToArray()
-}
-
-function Select-ShallowestPaths {
-	param($Paths)
-
-	$items = Get-FolderSizeStringList $Paths
-	if ($null -eq $items) { return ,@() }
-	$ordered = @($items | Sort-Object { if ([string]::IsNullOrEmpty($_)) { -1 } else { $_.Length } }, { $_ })
-	$kept = New-Object System.Collections.Generic.List[string]
-	foreach ($path in $ordered) {
-		if ($null -eq $path) { continue }
-		$covered = $false
-		foreach ($parent in $kept) {
-			if ([string]::IsNullOrEmpty($parent) -or $path -eq $parent) {
-				$covered = $true
-				break
-			}
-			if (-not [string]::IsNullOrEmpty($path) -and $path.StartsWith($parent + '\', [StringComparison]::OrdinalIgnoreCase)) {
-				$covered = $true
-				break
-			}
-		}
-		if (-not $covered) { [void]$kept.Add([string]$path) }
-	}
-	return ,$kept.ToArray()
-}
-
-function Get-FolderSizeItemCount {
-	param($Value)
-
-	# A one-item or empty array stored on the worker result is unwrapped when
-	# the main thread reads it back: one item arrives as that item, and an
-	# empty array arrives as $null.
-	if ($null -eq $Value) { return 0 }
-	if ($Value -is [System.Array]) { return $Value.Length }
-	return 1
-}
-
-function Test-FolderSizeMetricEntry {
-	param($Entry)
-
-	if ($null -eq $Entry) { return $false }
-	if ($Entry -is [System.Collections.DictionaryEntry] -or $Entry -is [System.Collections.IDictionary]) { return $false }
-	if ($null -eq $Entry.FileCount -or $null -eq $Entry.Logical -or $null -eq $Entry.Stored) { return $false }
-	$count = 0L
-	try { $count = [long]$Entry.FileCount } catch { return $false }
-	return ($count -gt 0)
-}
-
-function Test-FolderSizeCrossEntry {
-	param($Entry)
-
-	if ($null -eq $Entry) { return $false }
-	if ($Entry -is [System.Collections.DictionaryEntry] -or $Entry -is [System.Collections.IDictionary]) { return $false }
-	if ($null -eq $Entry.FileCount) { return $false }
-	$state = [string]$Entry.State
-	if ($state -ne 'OnlyInSource' -and $state -ne 'OnlyInBackup' -and $state -ne 'LogicalMismatch') { return $false }
-	$count = 0L
-	try { $count = [long]$Entry.FileCount } catch { return $false }
-	return ($count -gt 0)
 }

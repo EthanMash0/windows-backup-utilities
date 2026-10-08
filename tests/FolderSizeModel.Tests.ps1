@@ -161,6 +161,7 @@ Describe 'Test-FolderSizePathCovered' {
 	}
 	It 'covers nothing when there are no ancestors' {
 		Test-FolderSizePathCovered -RelativePath 'a' -Ancestors @() | Should -BeFalse
+		Test-FolderSizePathCovered -RelativePath 'a' -Ancestors $null | Should -BeFalse
 	}
 }
 
@@ -256,6 +257,15 @@ Describe 'Get-CrossTreeRollup' {
 		$backupDirs = New-TestDirectoryTable @('Secret')
 		$entries = Get-CrossTreeRollup -SourceDirectories $sourceDirs -DestDirectories $backupDirs -DestUnreadable @('Secret')
 		$entries.Count | Should -Be 0
+	}
+	It 'lists an empty folder inside a folder whose sizes differ' {
+		$source = New-TestFileTable @{ 'Docs\a.txt' = 1; 'Same\b.txt' = 1 }
+		$backup = New-TestFileTable @{ 'Docs\a.txt' = 2; 'Same\b.txt' = 1 }
+		$sourceDirs = New-TestDirectoryTable @('Docs', 'Docs\Empty', 'Same')
+		$backupDirs = New-TestDirectoryTable @('Docs', 'Same')
+		$entries = Get-CrossTreeRollup -SourceFiles $source -DestFiles $backup -SourceDirectories $sourceDirs -DestDirectories $backupDirs
+		$entries.RelativePath | Should -Be @('Docs', 'Docs\Empty')
+		$entries.State | Should -Be @('LogicalMismatch', 'OnlyInSource')
 	}
 }
 
