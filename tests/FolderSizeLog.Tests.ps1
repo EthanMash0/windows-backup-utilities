@@ -101,6 +101,18 @@ Describe 'Format-FolderCompareLogLines' {
 	}
 }
 
+Describe 'Resolve-FolderSizeInputPath' {
+	It 'resolves a relative path against the PowerShell location' {
+		Push-Location $script:RepoRoot
+		try { Resolve-FolderSizeInputPath 'tests' | Should -BeExactly (Join-Path $script:RepoRoot 'tests') }
+		finally { Pop-Location }
+	}
+	It 'leaves an absolute path as typed' {
+		$path = Join-Path $script:RepoRoot 'lib'
+		Resolve-FolderSizeInputPath $path | Should -BeExactly $path
+	}
+}
+
 Describe 'Format-FolderSizeLogPath' {
 	It 'names the root itself instead of printing an empty path' {
 		Format-FolderSizeLogPath -Root 'D:\Data' -Relative '' | Should -BeExactly 'D:\Data (entire folder)'

@@ -2,7 +2,7 @@ BeforeDiscovery {
 	$repo = Split-Path -Parent $PSScriptRoot
 	$script:SourceFiles = @(
 		Get-ChildItem -Path $repo -Recurse -Filter *.ps1 |
-			Where-Object { $_.FullName -notmatch '[\\/]tests[\\/]' } |
+			Where-Object { $_.FullName -notmatch '[\\/]tests[\\/]' -or $_.FullName -match '[\\/]tests[\\/]manual[\\/]' } |
 			ForEach-Object { @{ Name = $_.Name; Path = $_.FullName } }
 	)
 }

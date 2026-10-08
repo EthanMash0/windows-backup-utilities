@@ -129,18 +129,18 @@ Robocopy returns a bit mask. The base flags are **1** (files copied), **2** (ext
 
 ### Folder Size
 
-Recursively measures one folder. The path must already exist. Hidden and system items are included. Directory junctions and file symbolic links are not followed, matching the copy tool's `/XJ` switch, so a junction is not counted as well as its target. Cloud placeholder files are included.
+Recursively measures one folder. The path must already exist. A relative path is resolved against the current folder, and the summary and log show the full path. Hidden and system items are included.
+
+Directory junctions, mount points, and symbolic links are skipped, matching the copy tool's `/XJ` switch, so a junction is not counted as well as its target. Each skipped item is recorded with its kind (`junction or mount point` or `symlink`). Every other reparse point is measured like an ordinary item. That includes cloud placeholder files and online-only folders (OneDrive, Dropbox): the folder is walked and its files counted without downloading them.
 
 Two sizes are recorded for each file:
 
 - **Logical size** is `FileInfo.Length`, the directory metadata length. This is the length Robocopy copies with `/COPY:DAT`.
 - **Stored size** comes from `GetCompressedFileSizeW`. For a normal file it matches the logical size. It is smaller for NTFS-compressed files, sparse files, and dehydrated placeholders. Cluster slack is not included, so a 4K volume and a 64K volume can still match.
 
-While it scans, it shows live logical size, stored size, file count, folder count, and the path currently being read. The final summary repeats the path you typed, both totals (human-readable and bytes), the gap, the file and folder counts, the unreadable and reparse counts, and the log path. This main-menu tool does not compare two folders.
+While it scans, the **Scanning** box shows live logical size, stored size, file count, folder count, and the path currently being read. When it finishes, one summary box shows the path you typed, both totals with exact byte counts, the gap, the file and folder counts, the unreadable and reparse counts, how many detail entries are in the log, and the log path. Then the **Next** menu appears. The details themselves are only in the log. This main-menu tool does not compare two folders.
 
-When logical size and stored size differ, a second box lists the shallowest folder whose entire subtree differs. Each difference is a short record: path, file count, logical size, stored size, and gap. A folder that contains both matching and differing files is not listed; the differing file, or a uniform child folder, is listed instead. The whole tree is one record, labeled `entire folder`, only when every file differs. No differences produces `No differences.` More than 40 lines stay in the log; the screen shows the first 40 and how many lines remain.
-
-The full report, including every rollup line, unreadable path, and skipped reparse point, is written to `C:\Temp\backup_logs\folder_size\folder-size-<time>-<id>.txt`.
+Where logical and stored size differ, the log lists the shallowest folder whose entire subtree differs, with its file count, logical size, stored size, and gap. A folder that contains both matching and differing files is not listed; the differing file, or a uniform child folder, is listed instead. The whole tree is one entry, labeled `(entire folder)`, only when every file differs.
 
 Enumeration runs in an in-process PowerShell worker, publishing a complete progress snapshot at most once every 100 milliseconds and once at completion. The main thread owns all console output and can handle resizing while a filesystem read is waiting. Equal logical and stored size does not prove the bytes are identical, and the scan does not confirm that a concurrent copy has finished. Cancellation stops and disposes the worker.
 
@@ -150,7 +150,7 @@ Long paths are supported via the `\\?\` prefix:
 - UNC: `\\server\share\folder` → `\\?\UNC\server\share\folder`
 - Drive root: `E:` or `E:\` stays `E:\`. `\\?\E:` is not a valid path, and the root itself is too short to need the prefix.
 
-Access-denied directories and files are counted as unreadable and left out of the totals, so a locked or permission-denied tree can under-report. The log names those paths. An unreadable directory is one line, not a list of every child that could not be read.
+A folder or file that cannot be read is recorded as unreadable with the error Windows gave, such as `Access to the path ... is denied.`, and left out of the totals. A locked or permission-denied tree can therefore under-report. An unreadable folder is one entry, not a list of every child that could not be read. If the path you typed is a file, the result is one unreadable entry saying `The path is not a folder.`
 
 Enter with an empty path cancels and returns to the main menu.
 
@@ -158,21 +158,36 @@ Enter with an empty path cancels and returns to the main menu.
 
 Compare is on the main menu as **Folder Size Comparison**, and it is also option 3 on the Next menu after Copy Data. It is not on the Folder Size Next menu. From the main menu, both folders must already exist. An empty path cancels and returns to the main menu. After a copy, it uses that copy's source and destination and does not ask again. Two workers scan the trees at the same time. One finished worker stays on screen until the other finishes.
 
-The backup matches when every relative path has the same logical size. Paths are compared without regard to case. A stored-size gap is shown and does not by itself fail the backup. The result box states one of:
+The backup matches when every relative path has the same logical size. Paths are compared without regard to case. A folder that exists on only one side counts as a difference even when it is empty. A stored-size gap is reported and does not by itself fail the backup. The verdict is one of:
 
 - **Logical sizes match.** Nothing unreadable, and no path or logical-size difference.
 - **Sizes match for items that could be read. Some items were skipped.** No logical-size difference, but at least one item could not be read.
-- **Source and backup differ.** A path exists on only one side, or the logical sizes differ.
+- **Source and backup differ.** A file or folder exists on only one side, or the logical sizes differ.
 
-While those lists are compared, the comparing box shows how many files have been checked. The totals table comes next, with Source, Backup, and Gap columns for logical size, stored size, file count, folder count, unreadable count, and reparse count. Logical and stored rows include the exact byte count on the next line. On a narrow window the columns stack under each metric instead.
+While the file lists are compared, the **Comparing** box shows a progress bar. When it finishes, the screen shows only two boxes before the **Next** menu:
 
-The cross-tree, logical-versus-stored, and unreadable sections are each one box with Source and Backup columns. A folder only on one side appears in that column. A logical-size mismatch is one row across both columns. The shallowest uniform folder is listed, labeled `entire folder` when the whole tree differs. Logical versus stored shows path, file count, logical size, stored size, and gap in the column for that tree. Unreadable paths use the same columns, and a side with no paths says `none`. A path under another unreadable path is hidden. Each of those boxes keeps the first 40 lines on screen.
+- **Totals**: Source, Backup, and Gap columns for logical size, stored size, file count, folder count, unreadable count, and reparse count. Logical and stored rows include the exact byte count on the next line. On a window narrower than 68 columns the columns stack under each row name instead.
+- **Result**: the verdict, a note that this is a size check and equal logical size does not prove identical bytes, a note when stored size differs from logical size, how many cross-tree, logical-versus-stored, and unreadable entries are in the log, and the log path.
 
-The result box is last, just before the finished rule. It states the verdict above, says this is a size check and that equal logical size does not prove identical bytes, and gives the log path.
+The cross-tree differences, logical-versus-stored differences, unreadable paths, and skipped reparse points are only in the log. Cross-tree entries are grouped as only in source, only in backup, and logical size mismatch. The shallowest uniform folder is listed, as in the single-folder tool. An empty folder on one side is listed as `0 (empty folder)`. A mismatch lists both the source and the backup path.
 
-If the backup could not read `Secret\`, files under `Secret\` are not also listed as missing from the backup. The unreadable box names `Secret\`. The same rule applies in the other direction.
+If the backup could not read `Secret\`, files and folders under `Secret\` are not also listed as missing from the backup; `Secret\` is listed as unreadable instead. The same rule applies in the other direction. A folder that could not be listed is never reported as an empty folder.
 
-After a copy, the full report is written next to that copy's Robocopy log as `folder-compare-<time>-<id>.txt`. From the main menu, the same file is written under `C:\Temp\backup_logs\folder_size`. Choosing compare again runs it again. Ctrl+C stops and disposes both workers.
+Ctrl+C stops and disposes both workers. Choosing compare again runs it again.
+
+#### Folder size logs
+
+Every run writes a plain-text UTF-8 log:
+
+- Folder Size: `folder-size-yyyyMMdd-HHmmss-<id>.txt`
+- Folder Size Comparison: `folder-compare-yyyyMMdd-HHmmss-<id>.txt`
+
+A comparison after Copy Data writes its log next to that copy's Robocopy log. Otherwise logs go to `C:\Temp\backup_logs\folder_size`. If a folder cannot be written, the tool falls back to `C:\Temp\backup_logs\folder_size` (when it was not the first choice) and then to the Windows temp folder (`%TEMP%`). The final box shows where the log was written and names each folder that failed, with the reason. If no folder can be written, it says so.
+
+The log starts with the start and finish times and the full path or paths you entered. Every path in it is absolute and complete, however long, with no `...` shortening and no color codes, so it can be copied straight into Explorer or PowerShell. The root itself is written as `<path> (entire folder)`. Sections:
+
+- Folder Size: Summary, Logical vs stored, Unreadable (each with its error), Reparse points skipped (each with its kind).
+- Folder Size Comparison: Result, Totals, the three cross-tree groups, logical vs stored for each side, unreadable for each side, and reparse points skipped for each side. A section with no entries says `none`.
 
 ## Paths
 
@@ -253,8 +268,30 @@ A UNC path does not depend on the mapped letter being visible in the elevated se
 BackupTool.ps1     Main menu
 run.bat            Elevated launcher (UAC)
 lib/
-  Ui.ps1           Headers, boxes, menus, colors
-  Common.ps1       Shared path prompt and size formatting
-  Robocopy.ps1     Copy tool
-  FolderSize.ps1   Folder size tool
+  Ui.ps1                Screen renderer, boxes, menus, progress bar, colors
+  Common.ps1            Shared path prompt and size formatting
+  Robocopy.ps1          Copy tool
+  FolderSize.ps1        Folder size entry points; loads the files below
+  FolderSizeNative.ps1  Stored size and reparse tag calls into Windows
+  FolderSizeModel.ps1   Path helpers, rollups, cross-tree comparison, verdict
+                        (also loaded by the scan worker)
+  FolderSizeScan.ps1    Scan worker and the wait/complete/stop helpers
+  FolderSizeScreen.ps1  Progress, Totals, Result, and summary boxes
+  FolderSizeLog.ps1     Log text and log file writing
+tests/
+  *.Tests.ps1           Pester tests
+  manual/               Windows fixture script and manual checklist
 ```
+
+## Tests
+
+The automated tests use [Pester](https://pester.dev) 5 or later and PSScriptAnalyzer. They run on Windows or, with PowerShell 7, on macOS and Linux:
+
+```powershell
+Install-Module Pester, PSScriptAnalyzer -Scope CurrentUser
+Invoke-Pester -Path ./tests -Output Normal
+```
+
+`Syntax.Tests.ps1` checks that every script parses, uses only Windows PowerShell 5.1 syntax, and has no non-ASCII characters outside comments. The other tests cover the folder size model, log, screen, and scan worker. Off Windows, the scan worker tests replace the native Windows calls with a stand-in.
+
+Behavior that needs a real Windows volume (compression, sparse files, junctions, permissions, cloud placeholders, Ctrl+C) is covered by `tests/manual/FolderSizeChecklist.md`. Build its folders with `tests/manual/New-FolderSizeFixture.ps1`.

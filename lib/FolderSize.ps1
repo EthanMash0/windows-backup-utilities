@@ -6,6 +6,15 @@ foreach ($part in @('FolderSizeNative.ps1', 'FolderSizeModel.ps1', 'FolderSizeSc
 	. (Join-Path $script:FolderSizeLibRoot $part)
 }
 
+function Resolve-FolderSizeInputPath {
+	param([string]$Path)
+
+	# A relative path would become an invalid \\?\ path, and the log must show
+	# where the folder really is. Resolve against the PowerShell location, not
+	# the process directory.
+	return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 function Invoke-FolderSizeTool {
 	Reset-UiScreen
 
@@ -20,6 +29,7 @@ function Invoke-FolderSizeTool {
 		return
 	}
 
+	$inputPath = Resolve-FolderSizeInputPath $inputPath
 	$path = ConvertTo-FolderSizeLongPath $inputPath
 	Reset-UiScreen
 	$progress = @{ Source = (New-FolderSizeSnapshot -CurrentPath $path) }
@@ -66,6 +76,8 @@ function Invoke-FolderSizeComparison {
 	)
 
 	Reset-UiScreen
+	$Source = Resolve-FolderSizeInputPath $Source
+	$Dest = Resolve-FolderSizeInputPath $Dest
 	$sourcePath = ConvertTo-FolderSizeLongPath $Source
 	$destPath = ConvertTo-FolderSizeLongPath $Dest
 	$progress = @{
