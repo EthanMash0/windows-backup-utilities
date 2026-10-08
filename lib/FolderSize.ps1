@@ -93,6 +93,10 @@ public static class FolderSizeNative {
 function ConvertTo-FolderSizeLongPath {
 	param([string]$Path)
 
+	# \\?\E: is not a valid path. The drive root is short, so leave it as E:\.
+	if ($Path -match '^(?:\\\\\?\\)?[A-Za-z]:\\?$') {
+		return ($Path -replace '^\\\\\?\\', '').TrimEnd('\') + '\'
+	}
 	if ($Path -like '\\?\*') { return $Path }
 	if ($Path -like '\\*') { return '\\?\UNC\' + $Path.TrimStart('\') }
 	return '\\?\' + $Path
@@ -1249,6 +1253,10 @@ function Start-FolderSizeScan {
 
 			function ConvertTo-WorkerLongPath {
 				param([string]$Path)
+				# \\?\E: is not a valid path. The drive root is short, so leave it as E:\.
+				if ($Path -match '^(?:\\\\\?\\)?[A-Za-z]:\\?$') {
+					return ($Path -replace '^\\\\\?\\', '').TrimEnd('\') + '\'
+				}
 				if ($Path.StartsWith('\\?\', [StringComparison]::OrdinalIgnoreCase)) { return $Path }
 				if ($Path.StartsWith('\\', [StringComparison]::OrdinalIgnoreCase)) {
 					return '\\?\UNC\' + $Path.TrimStart('\')

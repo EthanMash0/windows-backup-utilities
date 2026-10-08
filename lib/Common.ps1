@@ -72,6 +72,10 @@ function Read-FolderPath {
 	while ($true) {
 		$value = Read-UiInput -Prompt $Prompt
 		$value = $value.Trim().Trim('"').TrimEnd('\')
+		# A drive root's backslash is the root, not a trailing separator.
+		if ($value -match '^[A-Za-z]:$') {
+			$value += '\'
+		}
 
 		if ([string]::IsNullOrWhiteSpace($value)) {
 			if (-not $AllowEmpty) {

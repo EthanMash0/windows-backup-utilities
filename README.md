@@ -148,6 +148,7 @@ Long paths are supported via the `\\?\` prefix:
 
 - Local: `C:\folder` → `\\?\C:\folder`
 - UNC: `\\server\share\folder` → `\\?\UNC\server\share\folder`
+- Drive root: `E:` or `E:\` stays `E:\`. `\\?\E:` is not a valid path, and the root itself is too short to need the prefix.
 
 Access-denied directories and files are counted as unreadable and left out of the totals, so a locked or permission-denied tree can under-report. The log names those paths. An unreadable directory is one line, not a list of every child that could not be read.
 
@@ -175,7 +176,7 @@ After a copy, the full report is written next to that copy's Robocopy log as `fo
 
 ## Paths
 
-You can enter a local path, a mapped drive letter, or a UNC share. Surrounding quotes are stripped. A trailing backslash is removed.
+You can enter a local path, a mapped drive letter, or a UNC share. Surrounding quotes are stripped. A trailing backslash is removed, except on a drive root: `E:` and `E:\` are both kept as `E:\`.
 
 ```
 D:\Users\ethanmash
