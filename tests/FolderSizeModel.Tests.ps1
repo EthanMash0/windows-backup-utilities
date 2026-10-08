@@ -258,6 +258,12 @@ Describe 'Get-CrossTreeRollup' {
 		$entries = Get-CrossTreeRollup -SourceDirectories $sourceDirs -DestDirectories $backupDirs -DestUnreadable @('Secret')
 		$entries.Count | Should -Be 0
 	}
+	It 'does not call a folder empty when its own side could not list it' {
+		$sourceDirs = New-TestDirectoryTable @('Denied', 'Open')
+		$backupDirs = New-TestDirectoryTable @('Open')
+		$entries = Get-CrossTreeRollup -SourceDirectories $sourceDirs -DestDirectories $backupDirs -SourceUnreadable @('Denied')
+		$entries.Count | Should -Be 0
+	}
 	It 'lists an empty folder inside a folder whose sizes differ' {
 		$source = New-TestFileTable @{ 'Docs\a.txt' = 1; 'Same\b.txt' = 1 }
 		$backup = New-TestFileTable @{ 'Docs\a.txt' = 2; 'Same\b.txt' = 1 }

@@ -264,6 +264,7 @@ function Get-CrossTreeFolderEntries {
 	param(
 		[hashtable]$Directories,
 		[hashtable]$OtherDirectories,
+		$Unreadable,
 		$OtherUnreadable,
 		[hashtable]$Stats,
 		$Reported,
@@ -272,12 +273,14 @@ function Get-CrossTreeFolderEntries {
 
 	# A folder with files under it is already covered by the file rollup, so
 	# this only adds folders that hold no files at all on the side that has them.
+	# A folder that could not be listed is unreadable, not empty.
 	$entries = New-Object System.Collections.Generic.List[object]
 	foreach ($dir in @($Directories.Keys)) {
 		if ($OtherDirectories.ContainsKey($dir)) { continue }
 		if ($Stats.ContainsKey($dir)) { continue }
 		$parent = Get-ParentRelativePath $dir
 		if (-not [string]::IsNullOrEmpty($parent) -and -not $OtherDirectories.ContainsKey($parent)) { continue }
+		if (Test-FolderSizePathCovered -RelativePath $dir -Ancestors $Unreadable) { continue }
 		if (Test-FolderSizePathCovered -RelativePath $dir -Ancestors $OtherUnreadable) { continue }
 		if (Test-FolderSizePathCovered -RelativePath $dir -Ancestors $Reported) { continue }
 		[void]$entries.Add((New-CrossTreeEntry -RelativePath $dir -State $State -FileCount 0 -SourceLogical 0 -DestLogical 0))
@@ -345,10 +348,10 @@ function Get-CrossTreeRollup {
 	}
 	$reportedSource = @(foreach ($entry in $entries) { if ($entry.State -eq 'OnlyInSource') { [string]$entry.RelativePath } })
 	$reportedBackup = @(foreach ($entry in $entries) { if ($entry.State -eq 'OnlyInBackup') { [string]$entry.RelativePath } })
-	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $SourceDirectories -OtherDirectories $DestDirectories -OtherUnreadable $DestUnreadable -Stats $stats -Reported $reportedSource -State 'OnlyInSource')) {
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $SourceDirectories -OtherDirectories $DestDirectories -Unreadable $SourceUnreadable -OtherUnreadable $DestUnreadable -Stats $stats -Reported $reportedSource -State 'OnlyInSource')) {
 		[void]$entries.Add($entry)
 	}
-	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $DestDirectories -OtherDirectories $SourceDirectories -OtherUnreadable $SourceUnreadable -Stats $stats -Reported $reportedBackup -State 'OnlyInBackup')) {
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $DestDirectories -OtherDirectories $SourceDirectories -Unreadable $DestUnreadable -OtherUnreadable $SourceUnreadable -Stats $stats -Reported $reportedBackup -State 'OnlyInBackup')) {
 		[void]$entries.Add($entry)
 	}
 	return ,@($entries | Sort-Object RelativePath, State)
