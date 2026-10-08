@@ -67,10 +67,10 @@ function Invoke-FolderSizeTool {
 		foreach ($row in (Format-MetricRecordLines -Entries $metricEntries -InnerWidth 96)) { [void]$logLines.Add([string]$row) }
 		[void]$logLines.Add('')
 		[void]$logLines.Add('Unreadable')
-		foreach ($row in (Format-UnreadableTableLines -SourcePaths $result.Unreadable -InnerWidth 96 -SingleTree -Plain)) { [void]$logLines.Add([string]$row) }
+		foreach ($row in (Format-UnreadableTableLines -SourcePaths (Get-FolderSizeRecordPaths $result.Unreadable) -InnerWidth 96 -SingleTree -Plain)) { [void]$logLines.Add([string]$row) }
 		[void]$logLines.Add('')
 		[void]$logLines.Add('Reparse points skipped')
-		foreach ($row in (Format-ReparseLogLines -SourcePaths $result.Reparse -SingleTree)) { [void]$logLines.Add([string]$row) }
+		foreach ($row in (Format-ReparseLogLines -SourcePaths (Get-FolderSizeRecordPaths $result.Reparse) -SingleTree)) { [void]$logLines.Add([string]$row) }
 		$logPath = $null
 		$logError = $null
 		try {
@@ -162,7 +162,7 @@ function Invoke-FolderSizeComparison {
 		if ($null -ne $sourceResult.FilesByPath) { $sourceCount = $sourceResult.FilesByPath.Count }
 		if ($null -ne $backupResult.FilesByPath) { $backupCount = $backupResult.FilesByPath.Count }
 		Update-FolderCompareBuildStatus -Done 0 -Total ([long]$sourceCount + [long]$backupCount)
-		$crossEntries = Get-CrossTreeRollup -SourceFiles $sourceResult.FilesByPath -DestFiles $backupResult.FilesByPath -SourceUnreadable $sourceResult.Unreadable -DestUnreadable $backupResult.Unreadable -OnProgress {
+		$crossEntries = Get-CrossTreeRollup -SourceFiles $sourceResult.FilesByPath -DestFiles $backupResult.FilesByPath -SourceDirectories $sourceResult.Directories -DestDirectories $backupResult.Directories -SourceUnreadable (Get-FolderSizeRecordPaths $sourceResult.Unreadable) -DestUnreadable (Get-FolderSizeRecordPaths $backupResult.Unreadable) -OnProgress {
 			param($Done, $Total)
 			Update-FolderCompareBuildStatus -Done $Done -Total $Total
 		}
@@ -200,10 +200,10 @@ function Invoke-FolderSizeComparison {
 			Cross = $crossEntries
 			SourceMetrics = $sourceMetrics
 			BackupMetrics = $backupMetrics
-			SourceUnreadable = $sourceResult.Unreadable
-			BackupUnreadable = $backupResult.Unreadable
-			SourceReparse = $sourceResult.Reparse
-			BackupReparse = $backupResult.Reparse
+			SourceUnreadable = (Get-FolderSizeRecordPaths $sourceResult.Unreadable)
+			BackupUnreadable = (Get-FolderSizeRecordPaths $backupResult.Unreadable)
+			SourceReparse = (Get-FolderSizeRecordPaths $sourceResult.Reparse)
+			BackupReparse = (Get-FolderSizeRecordPaths $backupResult.Reparse)
 			LogPath = $null
 			LogError = $null
 		}

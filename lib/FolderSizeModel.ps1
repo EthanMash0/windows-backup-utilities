@@ -174,121 +174,176 @@ function Test-FolderSizePathCovered {
 	return $false
 }
 
-function Test-FolderSizeMetricUniform {
+function Get-FolderSizeRecordPaths {
+	param($Records)
+
+	$paths = New-Object System.Collections.Generic.List[string]
+	foreach ($record in $Records) { [void]$paths.Add([string]$record.RelativePath) }
+	return ,$paths.ToArray()
+}
+
+function Select-FolderSizeUniformRollup {
+	param(
+		[hashtable]$Stats,
+		$Leaves,
+		[scriptblock]$GetUniformState
+	)
+
+	# A uniform folder stands in for everything under it, so list it only
+	# when its parent is not uniform too. A file is listed only when its
+	# folder was not.
+	$entries = New-Object System.Collections.Generic.List[object]
+	$states = New-FolderSizeKeyTable
+	if ($null -ne $Stats) {
+		foreach ($dir in @($Stats.Keys)) {
+			$state = & $GetUniformState $Stats[$dir]
+			if ($null -ne $state) { $states[$dir] = [string]$state }
+		}
+	}
+	foreach ($dir in @($states.Keys)) {
+		$parent = Get-ParentRelativePath $dir
+		if ($null -ne $parent -and $states.ContainsKey($parent)) { continue }
+		$entry = [ordered]@{ RelativePath = [string]$dir; State = $states[$dir] }
+		$node = $Stats[$dir]
+		foreach ($key in $node.Keys) { $entry[$key] = $node[$key] }
+		[void]$entries.Add([pscustomobject]$entry)
+	}
+	foreach ($leaf in $Leaves) {
+		$parent = Get-ParentRelativePath ([string]$leaf.RelativePath)
+		if ($null -ne $parent -and $states.ContainsKey($parent)) { continue }
+		[void]$entries.Add($leaf)
+	}
+	return ,@($entries | Sort-Object RelativePath, State)
+}
+
+function Get-FolderSizeMetricState {
 	param($Node)
 
-	return ($null -ne $Node -and $Node.FileCount -gt 0 -and $Node.DifferCount -eq $Node.FileCount)
+	if ($Node.FileCount -gt 0 -and $Node.DifferCount -eq $Node.FileCount) { return 'Differs' }
+	return $null
 }
 
 function Get-FolderSizeRollup {
 	param(
-		$DirectoryStats,
+		[hashtable]$DirectoryStats,
 		$Differences
 	)
 
-	$entries = New-Object System.Collections.Generic.List[object]
-	if ($null -eq $DirectoryStats) { return ,@() }
-
-	foreach ($dir in @($DirectoryStats.Keys)) {
-		$node = $DirectoryStats[$dir]
-		if (-not (Test-FolderSizeMetricUniform $node)) { continue }
-		$parent = Get-ParentRelativePath $dir
-		$parentUniform = $false
-		if ($null -ne $parent) {
-			$parentUniform = Test-FolderSizeMetricUniform $DirectoryStats[$parent]
-		}
-		if ($parentUniform) { continue }
-		if ($null -eq $node.FileCount -or $null -eq $node.Logical -or $null -eq $node.Stored) { continue }
-		[void]$entries.Add([pscustomobject]@{
-			RelativePath = [string]$dir
-			FileCount = [long]$node.FileCount
-			Logical = $node.Logical
-			Stored = $node.Stored
-		})
-	}
-
-	foreach ($diff in (Get-FolderSizeObjectList $Differences)) {
-		if ($diff -is [System.Collections.DictionaryEntry]) { continue }
-		if ($null -eq $diff.Logical -or $null -eq $diff.Stored) { continue }
-		$parent = Get-ParentRelativePath ([string]$diff.RelativePath)
-		$parentNode = $null
-		if ($null -ne $parent) { $parentNode = $DirectoryStats[$parent] }
-		if (Test-FolderSizeMetricUniform $parentNode) { continue }
-		[void]$entries.Add([pscustomobject]@{
-			RelativePath = [string]$diff.RelativePath
+	$leaves = New-Object System.Collections.Generic.List[object]
+	foreach ($difference in $Differences) {
+		[void]$leaves.Add([pscustomobject]@{
+			RelativePath = [string]$difference.RelativePath
+			State = 'Differs'
 			FileCount = [long]1
-			Logical = $diff.Logical
-			Stored = $diff.Stored
+			Logical = [uint64]$difference.Logical
+			Stored = [uint64]$difference.Stored
 		})
 	}
-
-	return ,@($entries | Sort-Object RelativePath)
-}
-
-function Test-CrossTreeUniform {
-	param($Node)
-
-	if ($null -eq $Node -or $Node.FileCount -le 0) { return $false }
-	if ($Node.OnlySource -eq $Node.FileCount) { return $true }
-	if ($Node.OnlyBackup -eq $Node.FileCount) { return $true }
-	if ($Node.Mismatch -eq $Node.FileCount) { return $true }
-	return $false
+	return Select-FolderSizeUniformRollup -Stats $DirectoryStats -Leaves $leaves -GetUniformState ${function:Get-FolderSizeMetricState}
 }
 
 function Get-CrossTreeState {
 	param($Node)
 
+	if ($Node.FileCount -le 0) { return $null }
 	if ($Node.OnlySource -eq $Node.FileCount) { return 'OnlyInSource' }
 	if ($Node.OnlyBackup -eq $Node.FileCount) { return 'OnlyInBackup' }
 	if ($Node.Mismatch -eq $Node.FileCount) { return 'LogicalMismatch' }
 	return $null
 }
 
+function New-CrossTreeEntry {
+	param(
+		[string]$RelativePath,
+		[string]$State,
+		[long]$FileCount,
+		[uint64]$SourceLogical,
+		[uint64]$DestLogical
+	)
+
+	return [pscustomobject]@{
+		RelativePath = $RelativePath
+		State = $State
+		FileCount = $FileCount
+		SourceLogical = $SourceLogical
+		DestLogical = $DestLogical
+	}
+}
+
 function Add-CrossTreeCount {
 	param(
-		$Stats,
+		[hashtable]$Stats,
 		[string]$RelativeFile,
 		[string]$State,
-		$SourceLogical,
-		$DestLogical
+		[uint64]$SourceLogical,
+		[uint64]$DestLogical
 	)
 
 	foreach ($dir in (Get-FolderSizeAncestorDirectories $RelativeFile)) {
-		if (-not $Stats.ContainsKey($dir)) {
-			$Stats[$dir] = @{
-				FileCount = 0
-				OnlySource = 0
-				OnlyBackup = 0
-				Mismatch = 0
+		$node = $Stats[$dir]
+		if ($null -eq $node) {
+			$node = @{
+				FileCount = [long]0
+				OnlySource = [long]0
+				OnlyBackup = [long]0
+				Mismatch = [long]0
 				SourceLogical = [uint64]0
 				DestLogical = [uint64]0
 			}
+			$Stats[$dir] = $node
 		}
-		$node = $Stats[$dir]
 		$node.FileCount = [long]$node.FileCount + 1
 		if ($State -eq 'Match') { continue }
 		if ($State -eq 'OnlyInSource') { $node.OnlySource = [long]$node.OnlySource + 1 }
 		elseif ($State -eq 'OnlyInBackup') { $node.OnlyBackup = [long]$node.OnlyBackup + 1 }
 		elseif ($State -eq 'LogicalMismatch') { $node.Mismatch = [long]$node.Mismatch + 1 }
-		$node.SourceLogical = [uint64]([decimal]$node.SourceLogical + [decimal]$SourceLogical)
-		$node.DestLogical = [uint64]([decimal]$node.DestLogical + [decimal]$DestLogical)
+		$node.SourceLogical = [uint64]$node.SourceLogical + $SourceLogical
+		$node.DestLogical = [uint64]$node.DestLogical + $DestLogical
 	}
+}
+
+function Get-CrossTreeFolderEntries {
+	param(
+		[hashtable]$Directories,
+		[hashtable]$OtherDirectories,
+		$OtherUnreadable,
+		[hashtable]$Stats,
+		$Reported,
+		[string]$State
+	)
+
+	# A folder with files under it is already covered by the file rollup, so
+	# this only adds folders that hold no files at all on the side that has them.
+	$entries = New-Object System.Collections.Generic.List[object]
+	foreach ($dir in @($Directories.Keys)) {
+		if ($OtherDirectories.ContainsKey($dir)) { continue }
+		if ($Stats.ContainsKey($dir)) { continue }
+		$parent = Get-ParentRelativePath $dir
+		if (-not [string]::IsNullOrEmpty($parent) -and -not $OtherDirectories.ContainsKey($parent)) { continue }
+		if (Test-FolderSizePathCovered -RelativePath $dir -Ancestors $OtherUnreadable) { continue }
+		if (Test-FolderSizePathCovered -RelativePath $dir -Ancestors $Reported) { continue }
+		[void]$entries.Add((New-CrossTreeEntry -RelativePath $dir -State $State -FileCount 0 -SourceLogical 0 -DestLogical 0))
+	}
+	return ,$entries.ToArray()
 }
 
 function Get-CrossTreeRollup {
 	param(
-		$SourceFiles,
-		$DestFiles,
+		[hashtable]$SourceFiles,
+		[hashtable]$DestFiles,
+		[hashtable]$SourceDirectories,
+		[hashtable]$DestDirectories,
 		$SourceUnreadable,
 		$DestUnreadable,
 		[scriptblock]$OnProgress
 	)
 
-	if ($null -eq $SourceFiles) { $SourceFiles = @{} }
-	if ($null -eq $DestFiles) { $DestFiles = @{} }
+	if ($null -eq $SourceFiles) { $SourceFiles = New-FolderSizeKeyTable }
+	if ($null -eq $DestFiles) { $DestFiles = New-FolderSizeKeyTable }
+	if ($null -eq $SourceDirectories) { $SourceDirectories = New-FolderSizeKeyTable }
+	if ($null -eq $DestDirectories) { $DestDirectories = New-FolderSizeKeyTable }
 	$stats = New-FolderSizeKeyTable
 	$leaves = New-Object System.Collections.Generic.List[object]
-	$seen = New-FolderSizeKeyTable
 	$compared = [long]0
 	$total = [long]$SourceFiles.Count + [long]$DestFiles.Count
 	$progressStep = 5000
@@ -298,36 +353,20 @@ function Get-CrossTreeRollup {
 		if ($null -ne $OnProgress -and (($compared % $progressStep) -eq 0 -or $compared -eq $total)) {
 			& $OnProgress $compared $total
 		}
-		$seen[$rel] = $true
-		$sourceFile = $SourceFiles[$rel]
-		if ($null -eq $sourceFile -or $null -eq $sourceFile.Logical) { continue }
+		$sourceLogical = [uint64]$SourceFiles[$rel]
+		$destLogical = [uint64]0
 		if ($DestFiles.ContainsKey($rel)) {
-			$destFile = $DestFiles[$rel]
-			if ($null -eq $destFile -or $null -eq $destFile.Logical) { continue }
-			if ([uint64]$sourceFile.Logical -ne [uint64]$destFile.Logical) {
-				Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State 'LogicalMismatch' -SourceLogical $sourceFile.Logical -DestLogical $destFile.Logical
-				[void]$leaves.Add([pscustomobject]@{
-					RelativePath = [string]$rel
-					State = 'LogicalMismatch'
-					FileCount = 1
-					SourceLogical = $sourceFile.Logical
-					DestLogical = $destFile.Logical
-				})
-			}
-			else {
+			$destLogical = [uint64]$DestFiles[$rel]
+			if ($sourceLogical -eq $destLogical) {
 				Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State 'Match' -SourceLogical 0 -DestLogical 0
+				continue
 			}
+			$state = 'LogicalMismatch'
 		}
-		elseif (-not (Test-FolderSizePathCovered -RelativePath $rel -Ancestors $DestUnreadable)) {
-			Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State 'OnlyInSource' -SourceLogical $sourceFile.Logical -DestLogical 0
-			[void]$leaves.Add([pscustomobject]@{
-				RelativePath = [string]$rel
-				State = 'OnlyInSource'
-				FileCount = 1
-				SourceLogical = $sourceFile.Logical
-				DestLogical = [uint64]0
-			})
-		}
+		elseif (Test-FolderSizePathCovered -RelativePath $rel -Ancestors $DestUnreadable) { continue }
+		else { $state = 'OnlyInSource' }
+		Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State $state -SourceLogical $sourceLogical -DestLogical $destLogical
+		[void]$leaves.Add((New-CrossTreeEntry -RelativePath $rel -State $state -FileCount 1 -SourceLogical $sourceLogical -DestLogical $destLogical))
 	}
 
 	foreach ($rel in @($DestFiles.Keys)) {
@@ -335,49 +374,68 @@ function Get-CrossTreeRollup {
 		if ($null -ne $OnProgress -and (($compared % $progressStep) -eq 0 -or $compared -eq $total)) {
 			& $OnProgress $compared $total
 		}
-		if ($seen.ContainsKey($rel)) { continue }
+		if ($SourceFiles.ContainsKey($rel)) { continue }
 		if (Test-FolderSizePathCovered -RelativePath $rel -Ancestors $SourceUnreadable) { continue }
-		$destFile = $DestFiles[$rel]
-		if ($null -eq $destFile -or $null -eq $destFile.Logical) { continue }
-		Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State 'OnlyInBackup' -SourceLogical 0 -DestLogical $destFile.Logical
-		[void]$leaves.Add([pscustomobject]@{
-			RelativePath = [string]$rel
-			State = 'OnlyInBackup'
-			FileCount = 1
-			SourceLogical = [uint64]0
-			DestLogical = $destFile.Logical
-		})
+		$destLogical = [uint64]$DestFiles[$rel]
+		Add-CrossTreeCount -Stats $stats -RelativeFile $rel -State 'OnlyInBackup' -SourceLogical 0 -DestLogical $destLogical
+		[void]$leaves.Add((New-CrossTreeEntry -RelativePath $rel -State 'OnlyInBackup' -FileCount 1 -SourceLogical 0 -DestLogical $destLogical))
 	}
 
 	$entries = New-Object System.Collections.Generic.List[object]
-	foreach ($dir in @($stats.Keys)) {
-		$node = $stats[$dir]
-		if (-not (Test-CrossTreeUniform $node)) { continue }
-		$parent = Get-ParentRelativePath $dir
-		$parentUniform = $false
-		if ($null -ne $parent) { $parentUniform = Test-CrossTreeUniform $stats[$parent] }
-		if ($parentUniform) { continue }
-		$state = Get-CrossTreeState $node
-		if ([string]::IsNullOrEmpty($state)) { continue }
-		if ($null -eq $node.FileCount -or [long]$node.FileCount -le 0) { continue }
-		[void]$entries.Add([pscustomobject]@{
-			RelativePath = [string]$dir
-			State = [string]$state
-			FileCount = [long]$node.FileCount
-			SourceLogical = $node.SourceLogical
-			DestLogical = $node.DestLogical
+	foreach ($entry in (Select-FolderSizeUniformRollup -Stats $stats -Leaves $leaves -GetUniformState ${function:Get-CrossTreeState})) {
+		[void]$entries.Add($entry)
+	}
+	$reported = @(foreach ($entry in $entries) { [string]$entry.RelativePath })
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $SourceDirectories -OtherDirectories $DestDirectories -OtherUnreadable $DestUnreadable -Stats $stats -Reported $reported -State 'OnlyInSource')) {
+		[void]$entries.Add($entry)
+	}
+	foreach ($entry in (Get-CrossTreeFolderEntries -Directories $DestDirectories -OtherDirectories $SourceDirectories -OtherUnreadable $SourceUnreadable -Stats $stats -Reported $reported -State 'OnlyInBackup')) {
+		[void]$entries.Add($entry)
+	}
+	return ,@($entries | Sort-Object RelativePath, State)
+}
+
+function Get-FolderCompareVerdict {
+	param(
+		$CrossEntries,
+		[long]$UnreadableCount
+	)
+
+	if ($null -ne $CrossEntries -and $CrossEntries.Count -gt 0) {
+		return @{ Status = 'Source and backup differ.'; Style = 'Error' }
+	}
+	if ($UnreadableCount -gt 0) {
+		return @{ Status = 'Sizes match for items that could be read. Some items were skipped.'; Style = 'Error' }
+	}
+	return @{ Status = 'Logical sizes match.'; Style = 'Success' }
+}
+
+function Get-FolderCompareTotalRows {
+	param(
+		[hashtable]$SourceResult,
+		[hashtable]$BackupResult
+	)
+
+	$rows = New-Object System.Collections.Generic.List[object]
+	foreach ($metric in @(
+		@{ Name = 'Logical'; Kind = 'Bytes'; Source = $SourceResult.Logical; Backup = $BackupResult.Logical }
+		@{ Name = 'Stored'; Kind = 'Bytes'; Source = $SourceResult.Stored; Backup = $BackupResult.Stored }
+		@{ Name = 'Files'; Kind = 'Count'; Source = $SourceResult.Files; Backup = $BackupResult.Files }
+		@{ Name = 'Folders'; Kind = 'Count'; Source = $SourceResult.Folders; Backup = $BackupResult.Folders }
+		@{ Name = 'Unreadable'; Kind = 'Count'; Source = $SourceResult.Unreadable.Count; Backup = $BackupResult.Unreadable.Count }
+		@{ Name = 'Reparse'; Kind = 'Count'; Source = $SourceResult.Reparse.Count; Backup = $BackupResult.Reparse.Count }
+	)) {
+		$source = [decimal]$metric.Source
+		$backup = [decimal]$metric.Backup
+		[void]$rows.Add([pscustomobject]@{
+			Name = $metric.Name
+			Kind = $metric.Kind
+			Source = $source
+			Backup = $backup
+			Gap = $source - $backup
 		})
 	}
-
-	foreach ($leaf in $leaves) {
-		$parent = Get-ParentRelativePath $leaf.RelativePath
-		$parentNode = $null
-		if ($null -ne $parent) { $parentNode = $stats[$parent] }
-		if (Test-CrossTreeUniform $parentNode) { continue }
-		[void]$entries.Add($leaf)
-	}
-
-	return ,@($entries | Sort-Object RelativePath, State)
+	return ,$rows.ToArray()
 }
 
 function Select-ShallowestPaths {

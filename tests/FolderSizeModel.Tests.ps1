@@ -4,23 +4,10 @@ BeforeAll {
 	function New-TestMetricStats {
 		param([object[]]$Files)
 
-		$stats = @{}
+		$stats = New-FolderSizeKeyTable
 		$differences = New-Object System.Collections.Generic.List[object]
 		foreach ($file in $Files) {
-			$differs = $file[1] -ne $file[2]
-			foreach ($dir in (Get-FolderSizeAncestorDirectories $file[0])) {
-				if (-not $stats.ContainsKey($dir)) {
-					$stats[$dir] = @{ FileCount = [long]0; DifferCount = [long]0; Logical = [uint64]0; Stored = [uint64]0 }
-				}
-				$node = $stats[$dir]
-				$node.FileCount++
-				$node.Logical += [uint64]$file[1]
-				$node.Stored += [uint64]$file[2]
-				if ($differs) { $node.DifferCount++ }
-			}
-			if ($differs) {
-				[void]$differences.Add(@{ RelativePath = $file[0]; Logical = [uint64]$file[1]; Stored = [uint64]$file[2] })
-			}
+			Add-FolderSizeMetric -Stats $stats -Differences $differences -RelativeFile $file[0] -Logical $file[1] -Stored $file[2]
 		}
 		return @{ Stats = $stats; Differences = $differences.ToArray() }
 	}
@@ -28,8 +15,16 @@ BeforeAll {
 	function New-TestFileTable {
 		param([hashtable]$Sizes)
 
-		$table = @{}
-		foreach ($key in $Sizes.Keys) { $table[$key] = @{ Logical = [uint64]$Sizes[$key]; Stored = [uint64]$Sizes[$key] } }
+		$table = New-FolderSizeKeyTable
+		foreach ($key in $Sizes.Keys) { $table[$key] = [uint64]$Sizes[$key] }
+		return $table
+	}
+
+	function New-TestDirectoryTable {
+		param([string[]]$Paths)
+
+		$table = New-FolderSizeKeyTable
+		foreach ($path in $Paths) { $table[$path] = $true }
 		return $table
 	}
 }
@@ -183,6 +178,7 @@ Describe 'Get-FolderSizeRollup' {
 		$entries = Get-FolderSizeRollup -DirectoryStats $data.Stats -Differences $data.Differences
 		$entries.RelativePath | Should -Be @('b', 'c\d', 'e\g.txt')
 		$entries[0].FileCount | Should -Be 2
+		$entries[0].State | Should -BeExactly 'Differs'
 		$entries[0].Logical | Should -Be 20
 		$entries[0].Stored | Should -Be 10
 		$entries[2].FileCount | Should -Be 1
@@ -234,5 +230,59 @@ Describe 'Get-CrossTreeRollup' {
 		$script:calls = @()
 		[void](Get-CrossTreeRollup -SourceFiles $source -DestFiles $backup -OnProgress { param($Done, $Total) $script:calls += "$Done/$Total" })
 		$script:calls[-1] | Should -BeExactly '3/3'
+	}
+	It 'lists an empty folder that exists on only one side' {
+		$source = New-TestFileTable @{ 'Docs\a.txt' = 1 }
+		$backup = New-TestFileTable @{ 'Docs\a.txt' = 1 }
+		$sourceDirs = New-TestDirectoryTable @('Docs', 'Empty', 'Empty\Deeper', 'Docs\Old')
+		$backupDirs = New-TestDirectoryTable @('Docs', 'Extra')
+		$entries = Get-CrossTreeRollup -SourceFiles $source -DestFiles $backup -SourceDirectories $sourceDirs -DestDirectories $backupDirs
+		$entries.RelativePath | Should -Be @('Docs\Old', 'Empty', 'Extra')
+		$entries.State | Should -Be @('OnlyInSource', 'OnlyInSource', 'OnlyInBackup')
+		$entries.FileCount | Should -Be @(0, 0, 0)
+	}
+	It 'does not list a missing folder again when its files are already listed' {
+		$source = New-TestFileTable @{ 'Gone\a.txt' = 1; 'Keep\b.txt' = 1 }
+		$backup = New-TestFileTable @{ 'Keep\b.txt' = 1 }
+		$sourceDirs = New-TestDirectoryTable @('Gone', 'Gone\Empty', 'Keep')
+		$backupDirs = New-TestDirectoryTable @('Keep')
+		$entries = Get-CrossTreeRollup -SourceFiles $source -DestFiles $backup -SourceDirectories $sourceDirs -DestDirectories $backupDirs
+		$entries.Count | Should -Be 1
+		$entries[0].RelativePath | Should -BeExactly 'Gone'
+		$entries[0].FileCount | Should -Be 1
+	}
+	It 'does not list an empty folder under an unreadable folder on the other side' {
+		$sourceDirs = New-TestDirectoryTable @('Secret', 'Secret\Empty')
+		$backupDirs = New-TestDirectoryTable @('Secret')
+		$entries = Get-CrossTreeRollup -SourceDirectories $sourceDirs -DestDirectories $backupDirs -DestUnreadable @('Secret')
+		$entries.Count | Should -Be 0
+	}
+}
+
+Describe 'Get-FolderCompareVerdict' {
+	It 'reports a difference first' {
+		(Get-FolderCompareVerdict -CrossEntries @([pscustomobject]@{ RelativePath = 'x' }) -UnreadableCount 3).Status | Should -BeExactly 'Source and backup differ.'
+	}
+	It 'reports skipped items when nothing differs' {
+		$verdict = Get-FolderCompareVerdict -CrossEntries @() -UnreadableCount 1
+		$verdict.Status | Should -Match 'Some items were skipped'
+		$verdict.Style | Should -BeExactly 'Error'
+	}
+	It 'reports a match' {
+		$verdict = Get-FolderCompareVerdict -CrossEntries $null -UnreadableCount 0
+		$verdict.Status | Should -BeExactly 'Logical sizes match.'
+		$verdict.Style | Should -BeExactly 'Success'
+	}
+}
+
+Describe 'Get-FolderCompareTotalRows' {
+	It 'computes each gap as source minus backup' {
+		$source = @{ Logical = [uint64]100; Stored = [uint64]60; Files = [long]3; Folders = [long]1; Unreadable = @(@{ RelativePath = 'x'; Error = 'denied' }); Reparse = @() }
+		$backup = @{ Logical = [uint64]90; Stored = [uint64]90; Files = [long]2; Folders = [long]1; Unreadable = @(); Reparse = @() }
+		$rows = Get-FolderCompareTotalRows -SourceResult $source -BackupResult $backup
+		$rows.Name | Should -Be @('Logical', 'Stored', 'Files', 'Folders', 'Unreadable', 'Reparse')
+		$rows.Gap | Should -Be @(10, -30, 1, 0, 1, 0)
+		$rows[0].Kind | Should -BeExactly 'Bytes'
+		$rows[2].Kind | Should -BeExactly 'Count'
 	}
 }

@@ -46,31 +46,55 @@ function Start-FolderSizeScan {
 				}
 			}
 
+			function Get-WorkerRelativePath {
+				param([string]$FullName)
+				return Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $FullName
+			}
+
+			function Add-WorkerUnreadable {
+				param([string]$FullName, $ErrorRecord, [string]$Message)
+				if ($null -ne $ErrorRecord) { $Message = Get-FolderSizeErrorMessage $ErrorRecord }
+				[void]$script:Unreadable.Add(@{ RelativePath = (Get-WorkerRelativePath $FullName); Error = $Message })
+			}
+
+			function Test-WorkerSkippedReparse {
+				param([string]$FullName)
+				$kind = [FolderSizeNative]::SkippedReparseKind([FolderSizeNative]::ReparseTag($FullName))
+				if ($null -eq $kind) { return $false }
+				[void]$script:Reparse.Add(@{ RelativePath = (Get-WorkerRelativePath $FullName); Kind = $kind })
+				return $true
+			}
+
 			function Measure-WorkerFile {
 				param($Entry, [string]$FullName, [bool]$IsReparse)
 				try {
-					$native = ConvertTo-FolderSizeLongPath $FullName
-					# Directory junctions are skipped before this runs. A file
-					# reparse point is skipped only when it is a symlink, so a
-					# cloud placeholder is still measured.
-					if ($IsReparse -and [FolderSizeNative]::IsSymlinkOrJunction($native)) {
-						[void]$script:ReparsePaths.Add((Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $FullName))
-						return
-					}
-					$stored = [uint64]([FolderSizeNative]::StoredSize($native))
+					if ($IsReparse -and (Test-WorkerSkippedReparse $FullName)) { return }
+					$stored = [uint64]([FolderSizeNative]::StoredSize($FullName))
 					$logical = [uint64]$Entry.Length
-					$relative = Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $FullName
+					$relative = Get-WorkerRelativePath $FullName
 					$script:ScanFiles = [long]$script:ScanFiles + 1
 					$script:ScanLogical = [uint64]$script:ScanLogical + $logical
 					$script:ScanStored = [uint64]$script:ScanStored + $stored
 					Add-FolderSizeMetric -Stats $script:Stats -Differences $script:Differences -RelativeFile $relative -Logical $logical -Stored $stored
-					if ($null -ne $script:FilesByPath) {
-						$script:FilesByPath[$relative] = @{ Logical = $logical; Stored = $stored }
-					}
+					if ($null -ne $script:FilesByPath) { $script:FilesByPath[$relative] = $logical }
 				}
 				catch {
-					[void]$script:UnreadablePaths.Add((Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $FullName))
+					Add-WorkerUnreadable -FullName $FullName -ErrorRecord $_
 				}
+			}
+
+			function Add-WorkerDirectory {
+				param([string]$FullName, [bool]$IsReparse, $Pending)
+				try {
+					if ($IsReparse -and (Test-WorkerSkippedReparse $FullName)) { return }
+				}
+				catch {
+					Add-WorkerUnreadable -FullName $FullName -ErrorRecord $_
+					return
+				}
+				$script:ScanFolders = [long]$script:ScanFolders + 1
+				if ($null -ne $script:Directories) { $script:Directories[(Get-WorkerRelativePath $FullName)] = $true }
+				$Pending.Push($FullName)
 			}
 
 			$script:ScanFiles = [long]0
@@ -80,31 +104,35 @@ function Start-FolderSizeScan {
 			$script:ScanCurrentPath = $ScanPath
 			$script:Stats = New-FolderSizeKeyTable
 			$script:Differences = New-Object System.Collections.Generic.List[object]
-			$script:ReparsePaths = New-Object System.Collections.Generic.List[string]
-			$script:UnreadablePaths = New-Object System.Collections.Generic.List[string]
+			$script:Reparse = New-Object System.Collections.Generic.List[object]
+			$script:Unreadable = New-Object System.Collections.Generic.List[object]
 			$script:FilesByPath = $null
-			if ($CollectFiles) { $script:FilesByPath = New-FolderSizeKeyTable }
+			$script:Directories = $null
+			if ($CollectFiles) {
+				$script:FilesByPath = New-FolderSizeKeyTable
+				$script:Directories = New-FolderSizeKeyTable
+			}
 			$script:WorkerRootDisplay = (Get-FolderSizeComparablePath $ScanPath).TrimEnd('\')
 			$script:ScanShared = $Shared
 			$script:ScanInterval = $Interval
 			$script:ScanClock = [System.Diagnostics.Stopwatch]::StartNew()
 
-			$walk = $true
+			$walk = $false
 			try {
 				# DirectoryInfo rejects the \\?\ prefix on .NET Framework. Get-Item accepts it.
 				$rootItem = Get-Item -LiteralPath $ScanPath -Force -ErrorAction Stop
 				if (-not $rootItem.PSIsContainer) {
-					[void]$script:UnreadablePaths.Add('')
-					$walk = $false
+					Add-WorkerUnreadable -FullName $ScanPath -Message 'The path is not a folder.'
 				}
-				elseif (([int]$rootItem.Attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-					[void]$script:ReparsePaths.Add('')
-					$walk = $false
+				elseif (([int]$rootItem.Attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+					$walk = $true
+				}
+				elseif (-not (Test-WorkerSkippedReparse $ScanPath)) {
+					$walk = $true
 				}
 			}
 			catch {
-				[void]$script:UnreadablePaths.Add('')
-				$walk = $false
+				Add-WorkerUnreadable -FullName $ScanPath -ErrorRecord $_
 			}
 
 			if ($walk) {
@@ -117,35 +145,29 @@ function Start-FolderSizeScan {
 					try {
 						# EnumerateFileSystemInfos treats \\?\ as an illegal path and
 						# would leave every total at 0. Get-ChildItem -LiteralPath does not.
-						foreach ($entry in (Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop)) {
-							$fullName = ConvertTo-FolderSizeLongPath $entry.FullName
-							$script:ScanCurrentPath = $fullName
-							$isReparse = $false
-							try {
-								$isReparse = (([int]$entry.Attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0)
-							}
-							catch {
-								[void]$script:UnreadablePaths.Add((Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $fullName))
-								Update-WorkerClock
-								continue
-							}
-							if ($entry.PSIsContainer) {
-								if ($isReparse) {
-									[void]$script:ReparsePaths.Add((Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $fullName))
-								}
-								else {
-									$script:ScanFolders = [long]$script:ScanFolders + 1
-									$pending.Push($fullName)
-								}
-							}
-							else {
-								Measure-WorkerFile -Entry $entry -FullName $fullName -IsReparse $isReparse
-							}
-							Update-WorkerClock
-						}
+						$entries = Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop
 					}
 					catch {
-						[void]$script:UnreadablePaths.Add((Get-FolderSizeRelativePath -RootDisplay $script:WorkerRootDisplay -FullName $dir))
+						Add-WorkerUnreadable -FullName $dir -ErrorRecord $_
+						continue
+					}
+					foreach ($entry in $entries) {
+						$fullName = ConvertTo-FolderSizeLongPath $entry.FullName
+						$script:ScanCurrentPath = $fullName
+						Update-WorkerClock
+						try {
+							$isReparse = (([int]$entry.Attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0)
+						}
+						catch {
+							Add-WorkerUnreadable -FullName $fullName -ErrorRecord $_
+							continue
+						}
+						if ($entry.PSIsContainer) {
+							Add-WorkerDirectory -FullName $fullName -IsReparse $isReparse -Pending $pending
+						}
+						else {
+							Measure-WorkerFile -Entry $entry -FullName $fullName -IsReparse $isReparse
+						}
 					}
 				}
 			}
@@ -156,11 +178,12 @@ function Start-FolderSizeScan {
 				Stored = $script:ScanStored
 				Files = $script:ScanFiles
 				Folders = $script:ScanFolders
-				Reparse = $script:ReparsePaths.ToArray()
-				Unreadable = $script:UnreadablePaths.ToArray()
+				Reparse = $script:Reparse.ToArray()
+				Unreadable = $script:Unreadable.ToArray()
 				DirectoryStats = $script:Stats
 				Differences = $script:Differences.ToArray()
 				FilesByPath = $script:FilesByPath
+				Directories = $script:Directories
 			}
 		}).AddArgument($Path).AddArgument($Shared).AddArgument($script:FolderSizeProgressIntervalMs).AddArgument([bool]$CollectFiles).AddArgument($modelSource)
 		return @{ Worker = $worker; Pending = $worker.BeginInvoke() }

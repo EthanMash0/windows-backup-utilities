@@ -2,10 +2,17 @@ function Initialize-FolderSizeNative {
 	# The worker runspace cannot see script functions. This type is loaded once
 	# into the process so both runspaces can call it. Re-dot-sourcing this file
 	# must not define the type again.
-	if ('FolderSizeNative' -as [type]) { return }
+	$loaded = 'FolderSizeNative' -as [type]
+	if ($null -ne $loaded) {
+		if ($null -eq $loaded.GetMethod('ReparseTag')) {
+			throw 'An older version of the folder size tool is loaded in this PowerShell window. Close it and start the tool again.'
+		}
+		return
+	}
 
 	Add-Type -TypeDefinition @'
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 public static class FolderSizeNative {
@@ -14,6 +21,7 @@ public static class FolderSizeNative {
 	const uint OpenReparse = 0x00200000;
 	const uint BackupSemantics = 0x02000000;
 	const uint OpenNoRecall = 0x00100000;
+	const int FileAttributeTagInfoClass = 9;
 	const uint SymlinkTag = 0xA000000C;
 	const uint MountPointTag = 0xA0000003;
 
@@ -50,11 +58,13 @@ public static class FolderSizeNative {
 		uint high;
 		uint low = GetCompressedFileSizeW(path, out high);
 		if (low == 0xFFFFFFFF && Marshal.GetLastWin32Error() != 0)
-			throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+			throw new Win32Exception(Marshal.GetLastWin32Error());
 		return ((ulong)high << 32) | low;
 	}
 
-	public static bool IsSymlinkOrJunction(string path) {
+	// Opens the reparse point itself, not its target, and does not recall a
+	// cloud placeholder. Throws when the item cannot be opened.
+	public static uint ReparseTag(string path) {
 		IntPtr handle = CreateFileW(
 			path,
 			FileReadAttributes,
@@ -63,16 +73,25 @@ public static class FolderSizeNative {
 			OpenExisting,
 			OpenReparse | BackupSemantics | OpenNoRecall,
 			IntPtr.Zero);
-		if (handle == new IntPtr(-1)) return false;
+		if (handle == new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());
 		try {
 			AttributeTagInfo info;
 			int size = Marshal.SizeOf(typeof(AttributeTagInfo));
-			if (!GetFileInformationByHandleEx(handle, 9, out info, (uint)size)) return false;
-			return info.ReparseTag == SymlinkTag || info.ReparseTag == MountPointTag;
+			if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfoClass, out info, (uint)size))
+				throw new Win32Exception(Marshal.GetLastWin32Error());
+			return info.ReparseTag;
 		}
 		finally {
 			CloseHandle(handle);
 		}
+	}
+
+	// Robocopy /XJ does not follow these. Every other tag, such as a cloud
+	// placeholder, is walked or measured like an ordinary item.
+	public static string SkippedReparseKind(uint tag) {
+		if (tag == SymlinkTag) return "symlink";
+		if (tag == MountPointTag) return "junction or mount point";
+		return null;
 	}
 }
 '@
