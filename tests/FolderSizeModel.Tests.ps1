@@ -41,7 +41,7 @@ Describe 'ConvertTo-FolderSizeLongPath' {
 	It 'prefixes a UNC path' {
 		ConvertTo-FolderSizeLongPath '\\server\share\x' | Should -BeExactly '\\?\UNC\server\share\x'
 	}
-	It 'prefixes a UNC path whose server name is one character' -Skip {
+	It 'prefixes a UNC path whose server name is one character' {
 		ConvertTo-FolderSizeLongPath '\\s\share\x' | Should -BeExactly '\\?\UNC\s\share\x'
 	}
 	It 'leaves an already prefixed path alone' {
@@ -51,6 +51,93 @@ Describe 'ConvertTo-FolderSizeLongPath' {
 		@{ Path = 'E:' }, @{ Path = 'E:\' }, @{ Path = '\\?\E:' }, @{ Path = '\\?\E:\' }
 	) {
 		ConvertTo-FolderSizeLongPath $Path | Should -BeExactly 'E:\'
+	}
+}
+
+Describe 'Relative and display paths' {
+	It 'turns a long path back into the typed form' {
+		Get-FolderSizeComparablePath '\\?\C:\a\b' | Should -BeExactly 'C:\a\b'
+		Get-FolderSizeComparablePath '\\?\UNC\server\share\b' | Should -BeExactly '\\server\share\b'
+		Get-FolderSizeComparablePath 'E:\' | Should -BeExactly 'E:\'
+	}
+	It 'makes a path relative to the scanned folder: <FullName>' -ForEach @(
+		@{ Root = 'C:\src'; FullName = '\\?\C:\src'; Expected = '' }
+		@{ Root = 'C:\src'; FullName = '\\?\C:\src\a\b.txt'; Expected = 'a\b.txt' }
+		@{ Root = 'C:\src'; FullName = '\\?\c:\SRC\a'; Expected = 'a' }
+		@{ Root = '\\server\share'; FullName = '\\?\UNC\server\share\x'; Expected = 'x' }
+		@{ Root = 'E:'; FullName = '\\?\E:\x\y'; Expected = 'x\y' }
+	) {
+		Get-FolderSizeRelativePath -RootDisplay $Root -FullName $FullName | Should -BeExactly $Expected
+	}
+	It 'joins a typed root and a relative path: <Root> + <Relative>' -ForEach @(
+		@{ Root = 'D:\Users\ethan'; Relative = 'Docs\a.txt'; Expected = 'D:\Users\ethan\Docs\a.txt' }
+		@{ Root = 'E:\'; Relative = 'x'; Expected = 'E:\x' }
+		@{ Root = '\\server\share'; Relative = 'x'; Expected = '\\server\share\x' }
+		@{ Root = 'D:\src'; Relative = ''; Expected = 'D:\src' }
+	) {
+		Join-FolderSizeDisplayPath -Root $Root -Relative $Relative | Should -BeExactly $Expected
+	}
+}
+
+Describe 'New-FolderSizeKeyTable' {
+	It 'ignores case' {
+		$table = New-FolderSizeKeyTable
+		$table['Docs\A.txt'] = 1
+		$table.ContainsKey('docs\a.TXT') | Should -BeTrue
+	}
+}
+
+Describe 'Get-FolderSizeErrorMessage' {
+	It 'unwraps a .NET method call failure' {
+		$record = $null
+		try { [System.IO.File]::ReadAllText('/no/such/file/here') } catch { $record = $_ }
+		Get-FolderSizeErrorMessage $record | Should -Not -Match 'Exception calling'
+	}
+}
+
+Describe 'Model in a worker runspace' {
+	It 'loads from its source text without the UI or common helpers' {
+		$source = [System.IO.File]::ReadAllText((Join-Path $script:LibRoot 'FolderSizeModel.ps1'))
+		$worker = [PowerShell]::Create()
+		try {
+			[void]$worker.AddScript({
+				param($ModelSource)
+				. ([scriptblock]::Create($ModelSource))
+				$stats = New-FolderSizeKeyTable
+				$differences = New-Object System.Collections.Generic.List[object]
+				Add-FolderSizeMetric -Stats $stats -Differences $differences -RelativeFile 'a\b.txt' -Logical 10 -Stored 4
+				ConvertTo-FolderSizeLongPath 'C:\x'
+				$stats['A'].FileCount
+				$differences.Count
+			}).AddArgument($source)
+			$output = $worker.Invoke()
+			$worker.HadErrors | Should -BeFalse
+			$output[0] | Should -BeExactly '\\?\C:\x'
+			$output[1] | Should -Be 1
+			$output[2] | Should -Be 1
+		}
+		finally { $worker.Dispose() }
+	}
+
+	It 'returns one-item and empty arrays intact through a synchronized table' {
+		$shared = [hashtable]::Synchronized(@{})
+		$worker = [PowerShell]::Create()
+		try {
+			[void]$worker.AddScript({
+				param($Shared)
+				$one = New-Object System.Collections.Generic.List[object]
+				[void]$one.Add(@{ RelativePath = 'x' })
+				$Shared.One = $one.ToArray()
+				$Shared.Empty = (New-Object System.Collections.Generic.List[object]).ToArray()
+			}).AddArgument($shared)
+			[void]$worker.Invoke()
+		}
+		finally { $worker.Dispose() }
+		$shared.One.GetType() | Should -Be ([object[]])
+		$shared.One.Count | Should -Be 1
+		($null -eq $shared.Empty) | Should -BeFalse
+		$shared.Empty.GetType() | Should -Be ([object[]])
+		$shared.Empty.Count | Should -Be 0
 	}
 }
 

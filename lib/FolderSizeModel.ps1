@@ -5,9 +5,62 @@ function ConvertTo-FolderSizeLongPath {
 	if ($Path -match '^(?:\\\\\?\\)?[A-Za-z]:\\?$') {
 		return ($Path -replace '^\\\\\?\\', '').TrimEnd('\') + '\'
 	}
-	if ($Path -like '\\?\*') { return $Path }
-	if ($Path -like '\\*') { return '\\?\UNC\' + $Path.TrimStart('\') }
+	if ($Path.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $Path }
+	if ($Path.StartsWith('\\', [StringComparison]::Ordinal)) { return '\\?\UNC\' + $Path.TrimStart('\') }
 	return '\\?\' + $Path
+}
+
+function Get-FolderSizeComparablePath {
+	param([string]$Path)
+
+	if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) {
+		return '\\' + $Path.Substring(8)
+	}
+	if ($Path.StartsWith('\\?\', [StringComparison]::Ordinal)) {
+		return $Path.Substring(4)
+	}
+	return $Path
+}
+
+function Get-FolderSizeRelativePath {
+	param(
+		[string]$RootDisplay,
+		[string]$FullName
+	)
+
+	$display = (Get-FolderSizeComparablePath $FullName).TrimEnd('\')
+	if ($display.Equals($RootDisplay, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+	$prefix = $RootDisplay + '\'
+	if ($display.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+		return $display.Substring($prefix.Length)
+	}
+	return $display
+}
+
+function Join-FolderSizeDisplayPath {
+	param(
+		[string]$Root,
+		[AllowEmptyString()]
+		[string]$Relative
+	)
+
+	if ([string]::IsNullOrEmpty($Relative)) { return $Root }
+	return $Root.TrimEnd('\') + '\' + $Relative
+}
+
+function New-FolderSizeKeyTable {
+	# NTFS compares names without regard to case.
+	return [hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+}
+
+function Get-FolderSizeErrorMessage {
+	param($ErrorRecord)
+
+	$exception = $ErrorRecord.Exception
+	if ($exception -is [System.Management.Automation.MethodInvocationException] -and $null -ne $exception.InnerException) {
+		$exception = $exception.InnerException
+	}
+	return $exception.Message
 }
 
 function Get-ParentRelativePath {
@@ -35,6 +88,32 @@ function Get-FolderSizeAncestorDirectories {
 	}
 	# Keep a one-item list intact. An unwrapped return would drop the root entry.
 	return ,$ancestors.ToArray()
+}
+
+function Add-FolderSizeMetric {
+	param(
+		[hashtable]$Stats,
+		[System.Collections.Generic.List[object]]$Differences,
+		[string]$RelativeFile,
+		[uint64]$Logical,
+		[uint64]$Stored
+	)
+
+	$differs = $Logical -ne $Stored
+	foreach ($dir in (Get-FolderSizeAncestorDirectories $RelativeFile)) {
+		$node = $Stats[$dir]
+		if ($null -eq $node) {
+			$node = @{ FileCount = [long]0; DifferCount = [long]0; Logical = [uint64]0; Stored = [uint64]0 }
+			$Stats[$dir] = $node
+		}
+		$node.FileCount = [long]$node.FileCount + 1
+		$node.Logical = [uint64]$node.Logical + $Logical
+		$node.Stored = [uint64]$node.Stored + $Stored
+		if ($differs) { $node.DifferCount = [long]$node.DifferCount + 1 }
+	}
+	if ($differs) {
+		[void]$Differences.Add(@{ RelativePath = $RelativeFile; Logical = $Logical; Stored = $Stored })
+	}
 }
 
 function Get-FolderSizeObjectList {
@@ -207,9 +286,9 @@ function Get-CrossTreeRollup {
 
 	if ($null -eq $SourceFiles) { $SourceFiles = @{} }
 	if ($null -eq $DestFiles) { $DestFiles = @{} }
-	$stats = @{}
+	$stats = New-FolderSizeKeyTable
 	$leaves = New-Object System.Collections.Generic.List[object]
-	$seen = @{}
+	$seen = New-FolderSizeKeyTable
 	$compared = [long]0
 	$total = [long]$SourceFiles.Count + [long]$DestFiles.Count
 	$progressStep = 5000
