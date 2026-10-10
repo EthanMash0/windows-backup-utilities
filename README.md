@@ -18,6 +18,8 @@ Use a normal `powershell.exe` window for live progress and resize handling. Host
 
 Double-click `run.bat`. That opens an elevated PowerShell window in this folder and starts `BackupTool.ps1`. Approve the UAC prompt.
 
+If nothing happens, or the window opens and closes right away, see [Tool does not launch from `run.bat`](#tool-does-not-launch-from-runbat-smart-app-control).
+
 To run the menu yourself (this command does not elevate; right-click PowerShell and run as administrator if you need that):
 
 ```powershell
@@ -202,6 +204,20 @@ Z:\Backups\user
 Source (Copy Data) and Path (Folder Size) must already exist. Destination (Copy Data) may be created if a parent folder exists.
 
 ## Troubleshooting
+
+### Tool does not launch from `run.bat` (Smart App Control)
+
+On Windows 11, **Smart App Control** can block `run.bat` and the PowerShell scripts it starts, because they are not signed. When that happens, double-clicking `run.bat` does nothing, the window opens and closes right away, or Windows shows a message that Smart App Control blocked an app.
+
+Turn Smart App Control off:
+
+1. Open **Settings** > **Privacy & security** > **Windows Security** > **App & browser control**.
+2. Select **Smart App Control settings**.
+3. Choose **Off**.
+
+Then double-click `run.bat` again.
+
+On some versions of Windows, Smart App Control cannot be turned back on without resetting or reinstalling Windows. Check with whoever manages the computer before turning it off.
 
 ### Mapped drives missing in the elevated window (`Z:`, `X:`, and similar)
 
