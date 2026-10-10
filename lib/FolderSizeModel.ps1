@@ -376,7 +376,6 @@ function Get-FolderCompareResultNotes {
 	param([hashtable]$Report)
 
 	$notes = New-Object System.Collections.Generic.List[string]
-	[void]$notes.Add('Size check only. Equal logical size does not prove identical bytes.')
 	if ($Report.StoredDiffers) { [void]$notes.Add('Stored size differs from logical size.') }
 	return ,$notes.ToArray()
 }

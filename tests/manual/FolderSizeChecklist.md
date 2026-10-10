@@ -37,8 +37,8 @@ Main menu **Folder Size**, path `C:\Temp\fs_fixture\src`.
 
 Expected screen:
 
-- While it scans, only the **Scanning** box.
-- Afterwards, only the **Folder Size** summary box, then the **Next** menu. There is no "Logical vs stored" box.
+- At the top, a **Folder Size Counter** box with `Folder: C:\Temp\fs_fixture\src`, laid out like the Confirm Copy box. Below it, the **Scanning** box while it scans. Both stay on screen afterwards.
+- Below it, only the **Folder Size** summary box, then the **Next** menu. There is no "Logical vs stored" box.
 - The summary shows Files `11`, Folders `20`, Unreadable `1`, Reparse `2`.
 - Logical size is `11.00 MB (11,534,556 bytes)`. Stored size is far smaller, roughly 100 KB or less, because the compressed file takes little space and the sparse file takes none.
 - `Details in log: 2 logical vs stored, 1 unreadable, 2 reparse points.` and `Log: C:\Temp\backup_logs\folder_size\folder-size-<time>-<id>.txt`.
@@ -57,10 +57,10 @@ Main menu **Folder Size Comparison**, source `C:\Temp\fs_fixture\src`, backup `C
 
 Expected screen:
 
-- While it runs, only the **Comparing** box, with a progress bar while files are matched.
-- Afterwards, only the **Totals** box and the **Result** box, then the **Next** menu. There are no Cross-tree, Logical vs stored, or Unreadable boxes.
-- Result: `Source and backup differ.`, the size-check note, `Stored size differs from logical size.`, `Details in log: 7 cross-tree, 2 logical vs stored, 1 unreadable.`, and the log path under `C:\Temp\backup_logs\folder_size`.
-- Totals: Files `11` / `9` / `2`, Folders `20` / `18` / `2`, Unreadable `1` / `0` / `1`, Reparse `2` / `0` / `2`. Logical bytes `11,534,556` / `11,534,659` / `-103`.
+- At the top, a **Folder Size Comparison** box with `Source:      C:\Temp\fs_fixture\src` and `Destination: C:\Temp\fs_fixture\bak`, laid out like the Confirm Copy box. Below it, the **Comparing** box, with a progress bar while files are matched. Both stay on screen afterwards.
+- Below it, only the **Totals** box and the **Result** box, then the **Next** menu. There are no Cross-tree, Logical vs stored, or Unreadable boxes.
+- Result: `Source and backup differ.`, `Stored size differs from logical size.`, `Details in log: 7 cross-tree, 2 logical vs stored, 1 unreadable.`, and the log path under `C:\Temp\backup_logs\folder_size`.
+- Totals: Logical `11.00 MB` / `11.00 MB` / `-103 bytes`, Files `11` / `9` / `2`, Folders `20` / `18` / `2`, Unreadable `1` / `0` / `1`, Reparse `2` / `0` / `2`. There are no `bytes` rows; the log's Totals section has the exact counts (`11,534,556` / `11,534,659` / `-103`).
 
 Expected log:
 
@@ -84,7 +84,7 @@ Expected: Result `Logical sizes match.` with `Details in log: 0 cross-tree, 0 lo
 Expected:
 
 - The copy progress bars look the same as before this change: green filled blocks, a gray track, and a percentage.
-- The comparison shows `Logical sizes match.`.
+- The Folder Size Comparison box lists `Source:      C:\Temp\fs_fixture\same_a` and `Destination: C:\Temp\fs_fixture\copy_test`, and the comparison shows `Logical sizes match.`.
 - The log path in the Result box is in the same folder as the Robocopy log (`C:\Temp\backup_logs\robocopy_<threads>_thread\folder-compare-<time>-<id>.txt`).
 
 Delete `C:\Temp\fs_fixture\copy_test` afterwards (the fixture's `-Remove` also deletes it).
@@ -137,4 +137,4 @@ Expected: the Result box shows `Log: C:\Temp\backup_logs\folder_size\folder-comp
 1. Run **Folder Size** on `\\localhost\C$\Temp\fs_fixture\same_a`. If you have a server with a one-letter name, try `\\s\<share>` as well.
 2. Run **Folder Size** on `lib` (a relative path; `run.bat` starts in the repository folder).
 
-Expected for the first: Files `2`, Folders `2`, Logical `0.03 KB (30 bytes)`, and the log's `Path:` line shows the UNC path as typed. Expected for the second: the scan counts the files in the repository's `lib` folder (not 0 with an unreadable root), and the summary and log show the full path, such as `C:\...\windows-backup-utilities\lib`.
+Expected for the first: Files `2`, Folders `2`, Logical `30 bytes`, and the log's `Path:` line shows the UNC path as typed. Expected for the second: the scan counts the files in the repository's `lib` folder (not 0 with an unreadable root), and the Folder Size Counter box, summary, and log show the full path, such as `C:\...\windows-backup-utilities\lib`.

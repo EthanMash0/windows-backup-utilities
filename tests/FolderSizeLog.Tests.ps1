@@ -91,6 +91,11 @@ Describe 'Format-FolderCompareLogLines' {
 			'Reparse points skipped: backup'
 		)
 	}
+	It 'keeps the size-check note in the log Result section' {
+		$lines = Format-FolderCompareLogLines -Report (New-TestLongReport)
+		$result = [array]::IndexOf($lines, 'Result')
+		$lines[$result + 2] | Should -BeExactly '  Size check only. Equal logical size does not prove identical bytes.'
+	}
 	It 'writes the header with timestamps and both roots' {
 		$lines = Format-FolderCompareLogLines -Report (New-TestLongReport)
 		$lines[0] | Should -BeExactly 'Folder Size Comparison'

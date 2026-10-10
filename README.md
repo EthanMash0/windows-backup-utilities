@@ -138,7 +138,7 @@ Two sizes are recorded for each file:
 - **Logical size** is `FileInfo.Length`, the directory metadata length. This is the length Robocopy copies with `/COPY:DAT`.
 - **Stored size** comes from `GetCompressedFileSizeW`. For a normal file it matches the logical size. It is smaller for NTFS-compressed files, sparse files, and dehydrated placeholders. Cluster slack is not included, so a 4K volume and a 64K volume can still match.
 
-While it scans, the **Scanning** box shows live logical size, stored size, file count, folder count, and the path currently being read. When it finishes, one summary box shows the path you typed, both totals with exact byte counts, the gap, the file and folder counts, the unreadable and reparse counts, how many detail entries are in the log, and the log path. Then the **Next** menu appears. The details themselves are only in the log. This main-menu tool does not compare two folders.
+A **Folder Size Counter** box at the top lists the folder being measured, in full, the same way the Confirm Copy box lists its paths. Below it, the **Scanning** box shows live logical size, stored size, file count, folder count, and the path currently being read. Both boxes stay on screen. When it finishes, one summary box shows the path you typed, both totals with exact byte counts, the gap, the file and folder counts, the unreadable and reparse counts, how many detail entries are in the log, and the log path. Then the **Next** menu appears. The details themselves are only in the log. This main-menu tool does not compare two folders.
 
 Where logical and stored size differ, the log lists the shallowest folder whose entire subtree differs, with its file count, logical size, stored size, and gap. A folder that contains both matching and differing files is not listed; the differing file, or a uniform child folder, is listed instead. The whole tree is one entry, labeled `(entire folder)`, only when every file differs.
 
@@ -164,10 +164,10 @@ The backup matches when every relative path has the same logical size. Paths are
 - **Sizes match for items that could be read. Some items were skipped.** No logical-size difference, but at least one item could not be read.
 - **Source and backup differ.** A file or folder exists on only one side, or the logical sizes differ.
 
-While the file lists are compared, the **Comparing** box shows a progress bar. When it finishes, the screen shows only two boxes before the **Next** menu:
+A **Folder Size Comparison** box at the top lists the source and destination in full, the same way the Confirm Copy box does. Below it, the **Comparing** box shows live totals for each side and, while the file lists are compared, a progress bar. Both boxes stay on screen, and the finished run adds only two boxes before the **Next** menu:
 
-- **Totals**: Source, Backup, and Gap columns for logical size, stored size, file count, folder count, unreadable count, and reparse count. Logical and stored rows include the exact byte count on the next line. On a window narrower than 68 columns the columns stack under each row name instead.
-- **Result**: the verdict, a note that this is a size check and equal logical size does not prove identical bytes, a note when stored size differs from logical size, how many cross-tree, logical-versus-stored, and unreadable entries are in the log, and the log path.
+- **Totals**: Source, Backup, and Gap columns for logical size, stored size, file count, folder count, unreadable count, and reparse count. Sizes under 1 KB are shown in bytes; exact byte counts for every size are in the log. On a window narrower than 68 columns the columns stack under each row name instead.
+- **Result**: the verdict, a note when stored size differs from logical size, how many cross-tree, logical-versus-stored, and unreadable entries are in the log, and the log path.
 
 The cross-tree differences, logical-versus-stored differences, unreadable paths, and skipped reparse points are only in the log. Cross-tree entries are grouped as only in source, only in backup, and logical size mismatch. The shallowest uniform folder is listed, as in the single-folder tool. An empty folder on one side is listed as `0 (empty folder)`. A mismatch lists both the source and the backup path.
 
@@ -187,7 +187,7 @@ A comparison after Copy Data writes its log next to that copy's Robocopy log. Ot
 The log starts with the start and finish times and the full path or paths you entered. Every path in it is absolute and complete, however long, with no `...` shortening and no color codes, so it can be copied straight into Explorer or PowerShell. The root itself is written as `<path> (entire folder)`. Sections:
 
 - Folder Size: Summary, Logical vs stored, Unreadable (each with its error), Reparse points skipped (each with its kind).
-- Folder Size Comparison: Result, Totals, the three cross-tree groups, logical vs stored for each side, unreadable for each side, and reparse points skipped for each side. A section with no entries says `none`.
+- Folder Size Comparison: Result (including a note that this is a size check and equal logical size does not prove identical bytes), Totals, the three cross-tree groups, logical vs stored for each side, unreadable for each side, and reparse points skipped for each side. A section with no entries says `none`.
 
 ## Paths
 

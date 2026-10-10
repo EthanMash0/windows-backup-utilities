@@ -32,6 +32,7 @@ function Invoke-FolderSizeTool {
 	$inputPath = Resolve-FolderSizeInputPath $inputPath
 	$path = ConvertTo-FolderSizeLongPath $inputPath
 	Reset-UiScreen
+	Add-FolderSizePathsBlock -Title $title -Rows @("  Folder: $inputPath")
 	$progress = @{ Source = (New-FolderSizeSnapshot -CurrentPath $path) }
 	Add-UiBlock @{ Kind = 'Custom'; Builder = ${function:New-FolderSizeScreenLines}; Data = $progress }
 	$scans = [ordered]@{}
@@ -80,6 +81,10 @@ function Invoke-FolderSizeComparison {
 	$Dest = Resolve-FolderSizeInputPath $Dest
 	$sourcePath = ConvertTo-FolderSizeLongPath $Source
 	$destPath = ConvertTo-FolderSizeLongPath $Dest
+	Add-FolderSizePathsBlock -Title 'Folder Size Comparison' -Rows @(
+		"  Source:      $Source"
+		"  Destination: $Dest"
+	)
 	$progress = @{
 		Source = (New-FolderSizeSnapshot -CurrentPath $sourcePath)
 		Backup = (New-FolderSizeSnapshot -CurrentPath $destPath)

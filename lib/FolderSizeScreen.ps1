@@ -131,6 +131,24 @@ function Get-FolderSizeLogNotes {
 	return ,$notes.ToArray()
 }
 
+function New-FolderSizePathsLines {
+	param([int]$WindowWidth, $Data)
+
+	# Laid out like the Confirm Copy details: full paths, wrapped, never shortened.
+	$layout = New-BoxLayout -WindowWidth $WindowWidth
+	$title = Format-UiText -Text ('  ' + $Data.Title) -Style Header
+	return @('') + @(Format-Box -Layout $layout -Title $title -Rows $Data.Rows -WrapRows)
+}
+
+function Add-FolderSizePathsBlock {
+	param(
+		[string]$Title,
+		[string[]]$Rows
+	)
+
+	Add-UiBlock @{ Kind = 'Custom'; Static = $true; Builder = ${function:New-FolderSizePathsLines}; Data = @{ Title = $Title; Rows = $Rows } }
+}
+
 # =============================================================================
 #  Single-folder screens
 # =============================================================================
@@ -317,18 +335,14 @@ function Format-FolderCompareTotalLines {
 	$header = Format-FolderSizeHeaderRow -Layout $layout -Headers $headers
 	if ($null -ne $header) { [void]$lines.Add($header) }
 	foreach ($row in $Rows) {
-		$cellRows = New-Object System.Collections.Generic.List[object]
 		if ($row.Kind -eq 'Bytes') {
-			[void]$cellRows.Add(@{ Label = $row.Name; Cells = @((Format-ByteSizeDetail $row.Source), (Format-ByteSizeDetail $row.Backup), (Format-ByteSizeDetail $row.Gap)) })
-			[void]$cellRows.Add(@{ Label = 'bytes'; Cells = @(('{0:N0}' -f $row.Source), ('{0:N0}' -f $row.Backup), ('{0:N0}' -f $row.Gap)) })
+			$cells = @((Format-ByteSizeDetail $row.Source), (Format-ByteSizeDetail $row.Backup), (Format-ByteSizeDetail $row.Gap))
 		}
 		else {
-			[void]$cellRows.Add(@{ Label = $row.Name; Cells = @(('{0:N0}' -f $row.Source), ('{0:N0}' -f $row.Backup), ('{0:N0}' -f $row.Gap)) })
+			$cells = @(('{0:N0}' -f $row.Source), ('{0:N0}' -f $row.Backup), ('{0:N0}' -f $row.Gap))
 		}
-		foreach ($cellRow in $cellRows) {
-			foreach ($line in (Format-FolderSizeCompareRows -Layout $layout -Label $cellRow.Label -Cells $cellRow.Cells -Headers $headers)) {
-				[void]$lines.Add($line)
-			}
+		foreach ($line in (Format-FolderSizeCompareRows -Layout $layout -Label $row.Name -Cells $cells -Headers $headers)) {
+			[void]$lines.Add($line)
 		}
 	}
 	return ,$lines.ToArray()

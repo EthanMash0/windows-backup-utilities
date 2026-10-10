@@ -56,6 +56,14 @@ Describe 'New-FolderCompareReportLines' {
 		$lines = @(New-FolderCompareReportLines -WindowWidth $Width -Report (New-TestScreenReport))
 		(Get-TestBoxText $lines) | Should -Match ([regex]::Escape($script:LogPath))
 	}
+	It 'leaves exact byte rows out of the Totals box at width <Width>' -ForEach @(
+		@{ Width = 60 }
+		@{ Width = 80 }
+	) {
+		$lines = @(New-FolderCompareReportLines -WindowWidth $Width -Report (New-TestScreenReport))
+		($lines | Where-Object { $_ -match '^\S bytes\s' }).Count | Should -Be 0
+		($lines | Where-Object { $_ -match '\(\d[\d,]* bytes\)' }).Count | Should -Be 0
+	}
 	It 'puts the columns side by side at width 80 and stacks them at width 60' {
 		$wide = @(New-FolderCompareReportLines -WindowWidth 80 -Report (New-TestScreenReport))
 		($wide | Where-Object { $_ -match 'Source\s+Backup\s+Gap' }).Count | Should -Be 1
@@ -70,7 +78,7 @@ Describe 'Get-FolderCompareResultRows' {
 		$rows = Get-FolderCompareResultRows -Report (New-TestScreenReport)
 		$text = $rows -join "`n"
 		$text | Should -Match 'Source and backup differ\.'
-		$text | Should -Match 'Size check only\.'
+		$text | Should -Not -Match 'Size check only'
 		$text | Should -Match 'Stored size differs from logical size\.'
 		$text | Should -Match 'Details in log: 2 cross-tree, 1 logical vs stored, 1 unreadable\.'
 		$text | Should -Match ([regex]::Escape('Log: ' + $script:LogPath))
@@ -129,6 +137,40 @@ Describe 'New-FolderCompareScreenLines' {
 		foreach ($line in (New-FolderCompareScreenLines -WindowWidth $Width -Progress $progress)) {
 			(Get-VisibleTextLength $line) | Should -BeLessThan $Width
 		}
+	}
+}
+
+Describe 'New-FolderSizePathsLines' {
+	It 'shows the source and destination under the tool title' {
+		$data = @{ Title = 'Folder Size Comparison'; Rows = @('  Source:      D:\Users\student', '  Destination: Z:\Backups\student') }
+		$lines = @(New-FolderSizePathsLines -WindowWidth 80 -Data $data)
+		$lines[0] | Should -BeExactly ''
+		$lines[2] | Should -Match '^\S  Folder Size Comparison\s+\S$'
+		$lines[4] | Should -Match ([regex]::Escape('  Source:      D:\Users\student '))
+		$lines[5] | Should -Match ([regex]::Escape('  Destination: Z:\Backups\student '))
+	}
+	It 'wraps a long path instead of shortening it at width <Width>' -ForEach @(
+		@{ Width = 40 }
+		@{ Width = 80 }
+	) {
+		$long = 'D:\Users\student\' + ((1..20 | ForEach-Object { 'Segment{0:00}' -f $_ }) -join '\')
+		$data = @{ Title = 'Folder Size Counter'; Rows = @("  Folder: $long") }
+		$lines = @(New-FolderSizePathsLines -WindowWidth $Width -Data $data)
+		foreach ($line in $lines) { (Get-VisibleTextLength $line) | Should -BeLessThan $Width }
+		(Get-TestBoxText $lines) -replace '\s', '' | Should -Match ([regex]::Escape($long))
+	}
+}
+
+Describe 'Format-ByteSizeDetail' {
+	It 'writes sizes under 1 KB as whole bytes so a small gap is not shown as zero' {
+		Format-ByteSizeDetail 0 | Should -BeExactly '0 bytes'
+		Format-ByteSizeDetail 5 | Should -BeExactly '5 bytes'
+		Format-ByteSizeDetail -103 | Should -BeExactly '-103 bytes'
+		Format-ByteSizeDetail 1023 -Exact | Should -BeExactly '1,023 bytes'
+	}
+	It 'writes larger sizes in units, with the exact count on request' {
+		Format-ByteSizeDetail 4096 | Should -BeExactly '4.00 KB'
+		Format-ByteSizeDetail -1048576 -Exact | Should -BeExactly '-1.00 MB (-1,048,576 bytes)'
 	}
 }
 

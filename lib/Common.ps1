@@ -127,7 +127,8 @@ function Format-ByteSizeDetail {
 		[switch]$Exact
 	)
 
-	if ($Bytes -eq 0) { return '0 bytes' }
+	# Below 1 KB, "0.00 KB" would hide a real gap of a few bytes.
+	if ([Math]::Abs($Bytes) -lt 1KB) { return ('{0:N0} bytes' -f $Bytes) }
 	$sign = ''
 	$absolute = $Bytes
 	if ($Bytes -lt 0) {

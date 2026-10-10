@@ -223,6 +223,7 @@ function Format-FolderCompareLogLines {
 	$result = New-Object System.Collections.Generic.List[string]
 	[void]$result.Add('Result')
 	[void]$result.Add(('  ' + [string]$Report.Status))
+	[void]$result.Add('  Size check only. Equal logical size does not prove identical bytes.')
 	foreach ($note in (Get-FolderCompareResultNotes -Report $Report)) { [void]$result.Add(('  ' + $note)) }
 	Add-FolderSizeLogSection -Lines $lines -Section $result
 	Add-FolderSizeLogSection -Lines $lines -Section (Format-FolderSizeLogTotalLines -Rows (Get-FolderCompareTotalRows -SourceResult $Report.SourceResult -BackupResult $Report.BackupResult))
