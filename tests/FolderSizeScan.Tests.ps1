@@ -44,7 +44,7 @@ public static class FolderSizeNative {
 	if (-not $script:OnWindows) {
 		$libCopy = Join-Path $script:Work 'lib'
 		[void][System.IO.Directory]::CreateDirectory($libCopy)
-		$model = [System.IO.File]::ReadAllText((Join-Path $script:LibRoot 'FolderSizeModel.ps1'))
+		$model = [System.IO.File]::ReadAllText((Join-Path $script:FolderSizeDir 'Model.ps1'))
 		$model += @'
 
 function ConvertTo-FolderSizeLongPath {
@@ -57,7 +57,7 @@ function Get-FolderSizeComparablePath {
 	return $Path.Replace('/', '\')
 }
 '@
-		[System.IO.File]::WriteAllText((Join-Path $libCopy 'FolderSizeModel.ps1'), $model)
+		[System.IO.File]::WriteAllText((Join-Path $libCopy 'Model.ps1'), $model)
 		$script:FolderSizeLibRoot = $libCopy
 	}
 

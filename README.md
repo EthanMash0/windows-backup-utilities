@@ -265,19 +265,20 @@ A UNC path does not depend on the mapped letter being visible in the elevated se
 ## Project layout
 
 ```
-BackupTool.ps1     Main menu
-run.bat            Elevated launcher (UAC)
+BackupTool.ps1          Main menu
+run.bat                 Elevated launcher (UAC)
 lib/
   Ui.ps1                Screen renderer, boxes, menus, progress bar, colors
   Common.ps1            Shared path prompt and size formatting
   Robocopy.ps1          Copy tool
-  FolderSize.ps1        Folder size entry points; loads the files below
-  FolderSizeNative.ps1  Stored size and reparse tag calls into Windows
-  FolderSizeModel.ps1   Path helpers, rollups, cross-tree comparison, verdict
+  FolderSize/           Folder size tools
+    FolderSize.ps1      Entry points; loads the files below
+    Native.ps1          Stored size and reparse tag calls into Windows
+    Model.ps1           Path helpers, rollups, cross-tree comparison, verdict
                         (also loaded by the scan worker)
-  FolderSizeScan.ps1    Scan worker and the wait/complete/stop helpers
-  FolderSizeScreen.ps1  Progress, Totals, Result, and summary boxes
-  FolderSizeLog.ps1     Log text and log file writing
+    Scan.ps1            Scan worker and the wait/complete/stop helpers
+    Screen.ps1          Paths, progress, Totals, Result, and summary boxes
+    Log.ps1             Log text and log file writing
 tests/
   *.Tests.ps1           Pester tests
   manual/               Windows fixture script and manual checklist

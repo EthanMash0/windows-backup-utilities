@@ -49,14 +49,14 @@ while ($true) {
 			}
 		}
 		'2' {
-			. "$PSScriptRoot\lib\FolderSize.ps1"
+			. "$PSScriptRoot\lib\FolderSize\FolderSize.ps1"
 			$result = Invoke-FolderSizeTool
 			if ($result -eq 'Completed') {
 				Read-AfterToolChoice
 			}
 		}
 		'3' {
-			. "$PSScriptRoot\lib\FolderSize.ps1"
+			. "$PSScriptRoot\lib\FolderSize\FolderSize.ps1"
 			$result = Invoke-FolderSizeCompareTool
 			if ($result -eq 'Completed') {
 				Read-AfterToolChoice

@@ -18,7 +18,7 @@ function Start-FolderSizeScan {
 
 	Initialize-FolderSizeNative
 	$shared = [hashtable]::Synchronized(@{ Snapshot = (New-FolderSizeSnapshot -CurrentPath $Path); Result = $null })
-	$modelSource = [System.IO.File]::ReadAllText((Join-Path $script:FolderSizeLibRoot 'FolderSizeModel.ps1'))
+	$modelSource = [System.IO.File]::ReadAllText((Join-Path $script:FolderSizeLibRoot 'Model.ps1'))
 	$worker = [PowerShell]::Create()
 	try {
 		# A new runspace cannot call the functions in this file. It loads the

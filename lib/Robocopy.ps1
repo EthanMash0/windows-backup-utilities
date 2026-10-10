@@ -934,7 +934,7 @@ function Read-AfterCopyChoice {
 		[string]$LogFolder
 	)
 
-	. (Join-Path $script:RobocopyLibRoot 'FolderSize.ps1')
+	. (Join-Path $script:RobocopyLibRoot 'FolderSize\FolderSize.ps1')
 
 	while ($true) {
 		Add-UiBlock @{ Kind = 'Custom'; Static = $true; Builder = ${function:New-UiFinishedLines}; Data = $null }

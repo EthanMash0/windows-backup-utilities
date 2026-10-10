@@ -92,7 +92,7 @@ Describe 'Get-FolderSizeErrorMessage' {
 
 Describe 'Model in a worker runspace' {
 	It 'loads from its source text without the UI or common helpers' {
-		$source = [System.IO.File]::ReadAllText((Join-Path $script:LibRoot 'FolderSizeModel.ps1'))
+		$source = [System.IO.File]::ReadAllText((Join-Path $script:FolderSizeDir 'Model.ps1'))
 		$worker = [PowerShell]::Create()
 		try {
 			[void]$worker.AddScript({

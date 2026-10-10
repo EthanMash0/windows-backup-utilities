@@ -2,7 +2,7 @@ $script:FolderSizeProgressIntervalMs = 100
 $script:FolderSizeLogRoot = 'C:\Temp\backup_logs\folder_size'
 $script:FolderSizeLibRoot = $PSScriptRoot
 
-foreach ($part in @('FolderSizeNative.ps1', 'FolderSizeModel.ps1', 'FolderSizeScan.ps1', 'FolderSizeScreen.ps1', 'FolderSizeLog.ps1')) {
+foreach ($part in @('Native.ps1', 'Model.ps1', 'Scan.ps1', 'Screen.ps1', 'Log.ps1')) {
 	. (Join-Path $script:FolderSizeLibRoot $part)
 }
 

@@ -126,7 +126,7 @@ Then run **Folder Size** on that folder. Expected: Files and Logical size match 
 In an elevated PowerShell window in the repository folder:
 
 ```powershell
-. .\lib\Ui.ps1; . .\lib\Common.ps1; . .\lib\FolderSize.ps1
+. .\lib\Ui.ps1; . .\lib\Common.ps1; . .\lib\FolderSize\FolderSize.ps1
 Invoke-FolderSizeComparison -Source C:\Temp\fs_fixture\same_a -Dest C:\Temp\fs_fixture\same_b -LogFolder C:\Temp\fs_fixture\readonly_logs
 ```
 
